@@ -163,7 +163,15 @@ DUCKEOF
   # but not contractually guaranteed the way a Reserved/Elastic IP would
   # be — this cron is cheap insurance (one small HTTP call) against ever
   # needing to notice and fix a silently stale DNS record by hand.
-  (crontab -l 2>/dev/null | grep -v duckdns/update.sh; echo "*/5 * * * * /opt/duckdns/update.sh") | crontab -
+  # `|| true` on the read side: a fresh instance has no crontab yet, so
+  # `crontab -l` exits non-zero, and piping nothing through `grep -v` does
+  # too (grep exits 1 when it selects zero lines) — both expected on a
+  # first run, neither a real error. Without the guard, `set -e` (inherited
+  # by this subshell from the parent script) kills the subshell right at
+  # that semicolon, before the echo below ever runs, and the whole script
+  # dies silently with no cron job installed and everything after this
+  # point — including the systemd unit — never created.
+  (crontab -l 2>/dev/null | grep -v duckdns/update.sh || true; echo "*/5 * * * * /opt/duckdns/update.sh") | crontab -
   echo ">>> DNS: ${DUCKDNS_SUBDOMAIN}.duckdns.org now points at this instance, refreshed every 5min."
 else
   echo "DUCKDNS_SUBDOMAIN/DUCKDNS_TOKEN not set — skipping. Caddy will need a real domain before it can get an automatic HTTPS cert (see Caddyfile's bare-IP fallback for a no-domain smoke test)."
