@@ -156,8 +156,13 @@ sudo apt-get update && sudo apt-get install -y caddy
 Your DuckDNS subdomain from step 3 is already pointing at this instance
 (the setup script handled that). Edit `deploy/Caddyfile`, replace
 `your-chosen-name.duckdns.org` in the block header with the actual name you
-picked, then:
+picked, then create the log directory Caddyfile's `log` block writes to —
+the apt package creates a `caddy` system user/group and runs the service
+as that user, but does NOT create `/var/log/caddy` for you; skip this and
+the reload below fails with a permission-denied error trying to create it:
 ```
+sudo mkdir -p /var/log/caddy
+sudo chown caddy:caddy /var/log/caddy
 sudo cp deploy/Caddyfile /etc/caddy/Caddyfile
 sudo systemctl reload caddy
 ```

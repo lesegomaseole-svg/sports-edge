@@ -24,23 +24,39 @@
 #   cp Caddyfile /etc/caddy/Caddyfile
 #   systemctl reload caddy
 
+# Modest defense against a slow-loris-style resource exhaustion —
+# proportionate for a single-user advisory tool sitting on a Free-tier VM,
+# not something under active attack, but cheap to set and it's the kind of
+# thing worth having by default rather than after a problem. `timeouts`
+# is a per-SERVER option, not a per-site directive — it belongs in the
+# global options block (the one with no site address), which must be the
+# first block in the file if present. Confirmed against the installed
+# version (caddy validate, v2.11.4) — it errors as "unrecognized
+# directive" if placed inside the site block below instead.
+{
+	servers {
+		timeouts {
+			read_body 10s
+			read_header 5s
+		}
+	}
+}
+
 your-chosen-name.duckdns.org {
 	reverse_proxy localhost:3000
 
 	# Caddy's own access log — separate from the app's, useful for seeing
 	# what's actually hitting the box before it reaches the auth gate.
+	# The apt package does NOT create /var/log/caddy for you — confirmed by
+	# reproducing it locally (caddy validate fails with "mkdir
+	# /var/log/caddy: permission denied" against an unprivileged process,
+	# same failure mode the apt-installed `caddy` system user would hit
+	# writing to root-owned /var/log). See the runbook's Caddy step —
+	# `mkdir -p /var/log/caddy && chown caddy:caddy /var/log/caddy` has to
+	# happen before the first reload.
 	log {
 		output file /var/log/caddy/sports-edge-access.log
 		format json
-	}
-
-	# Modest defense against a slow-loris-style resource exhaustion —
-	# proportionate for a single-user advisory tool sitting on a Free-tier
-	# VM, not something under active attack, but cheap to set and it's the
-	# kind of thing worth having by default rather than after a problem.
-	timeouts {
-		read_body 10s
-		read_header 5s
 	}
 }
 
