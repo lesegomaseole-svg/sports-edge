@@ -1,0 +1,379 @@
+// Sports Edge — data model
+//
+// Design notes:
+// - Sport / League / TrackedMarket form the "market manager": the set of
+//   sport+league+market combinations the ingestion pipeline actually polls.
+//   Everything else in the system only ever touches tracked markets, which
+//   keeps API usage (and cost) bounded as we add more sports later.
+// - Event/NewsItem are provider-agnostic: any FixtureProvider or
+//   NewsProvider implementation writes into the same shape. OddsSnapshot
+//   is inert as of 2026-08-03 (see its own comment) — kept for its
+//   existing historical data, nothing writes new rows anymore.
+// - Pick is the AI agent's output: advisory only, never auto-executed.
+// - SQLite for zero-setup local dev. Swapping to Postgres later is just
+//   changing `provider` + DATABASE_URL — no application code changes.
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// A sport, e.g. "soccer", "basketball", "tennis". Keys match the
+// provider's own sport keys where possible so ingestion can map 1:1.
+model Sport {
+  id        Int      @id @default(autoincrement())
+  key       String   @unique // e.g. "soccer_epl", "basketball_nba"
+  group     String // e.g. "Soccer", "Basketball", "Tennis"
+  title     String // e.g. "EPL", "NBA"
+  active    Boolean  @default(false) // whether it shows up as trackable in the UI
+  createdAt DateTime @default(now())
+
+  trackedMarkets TrackedMarket[]
+  events         Event[]
+  baseRate       LeagueBaseRate?
+
+  @@index([group])
+}
+
+// Rolling per-league context — recomputed from MatchResult data this app
+// already ingests (see leagueBaseRates.ts), not a separate external data
+// source. Injected into the analysis prompt as its own block (see
+// analyzeEvent.ts) so a team's raw numbers can be read relative to what's
+// normal for that league rather than in absolute terms. Added 2026-08-01.
+//
+// Two independent sample sizes: goals/result data survives even a
+// final-score-only fallback result (The Odds API's /scores), but corners/
+// cards only ever come from ESPN (see espnMatchResult.ts) — so the corners/
+// cards average is typically based on fewer matches than the goals one,
+// and both counts are surfaced in the prompt so the model can judge how
+// much weight either deserves.
+model LeagueBaseRate {
+  id      Int   @id @default(autoincrement())
+  sportId Int   @unique
+  sport   Sport @relation(fields: [sportId], references: [id])
+
+  goalsPerMatch Float?
+  homeWinPct    Float?
+  drawPct       Float?
+  awayWinPct    Float?
+  resultsSampleSize Int @default(0)
+
+  cornersPerMatch Float?
+  cardsPerMatch   Float?
+  cornersCardsSampleSize Int @default(0)
+
+  computedAt DateTime @updatedAt
+}
+
+// The market manager: a specific (sport, market type) combination that the
+// polling scheduler will actually fetch odds for. This is what the
+// dashboard's toggle UI reads/writes.
+model TrackedMarket {
+  id         Int      @id @default(autoincrement())
+  sportId    Int
+  sport      Sport    @relation(fields: [sportId], references: [id])
+  marketType String // "h2h" (moneyline), "spreads", "totals", "outrights", etc.
+  enabled    Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([sportId, marketType])
+}
+
+// A fixture/event — from ESPN as of 2026-08-03 (see fixtureIngestion.ts),
+// previously from the odds provider until that source got blocked at the
+// network level and fixture discovery was decoupled from it entirely.
+model Event {
+  id           Int      @id @default(autoincrement())
+  externalId   String   @unique // provider's event id, for de-duping on refresh
+  sportId      Int
+  sport        Sport    @relation(fields: [sportId], references: [id])
+  homeTeam     String
+  awayTeam     String
+  commenceTime DateTime
+  completed    Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // Computed once at ingestion time (see oddsIngestion.ts) from how many
+  // real signals (odds presence, corners/cards stats, news) were actually
+  // found for this fixture. Fixtures that don't clear the bar are deleted
+  // right away, not kept around with hasSufficientData=false — so in
+  // practice any Event row that still exists always has
+  // hasSufficientData=true. Both fields are still stored explicitly
+  // (rather than inferred from "row exists") so the score is
+  // visible/queryable, e.g. for GET /api/fixtures/top's ordering.
+  hasSufficientData Boolean @default(false)
+  dataScore         Int     @default(0)
+
+  oddsSnapshots OddsSnapshot[]
+  picks         Pick[]
+  matchResult   MatchResult?
+
+  @@index([sportId, commenceTime])
+  @@index([dataScore])
+}
+
+// The actual outcome of one fixture, used to settle its Picks (see
+// settlement.ts). Added 2026-08-01. Populated by resultsIngestion.ts,
+// which prefers ESPN's match summary (free, and — verified live — richer
+// than The Odds API's /scores: half-time score, per-team corners/cards,
+// and goal order, not just the final score) over The Odds API's /scores
+// endpoint (used only as a fallback for final score when ESPN can't
+// resolve the fixture — see espnMatchResult.ts for why ESPN is primary
+// here despite the original ask naming The Odds API first).
+//
+// Every numeric field is nullable: a source may supply the final score
+// but not corners, or resolve the match at all but before full-time
+// (completed: false) — settlement.ts only ever acts on fields that are
+// actually populated, and marks a Pick "unsettleable" rather than
+// guessing when what it needs is null.
+model MatchResult {
+  id             Int      @id @default(autoincrement())
+  eventId        Int      @unique
+  event          Event    @relation(fields: [eventId], references: [id])
+  completed      Boolean  @default(false)
+
+  finalScoreHome Int?
+  finalScoreAway Int?
+  htScoreHome    Int?
+  htScoreAway    Int?
+
+  homeCorners    Int?
+  awayCorners    Int?
+  totalCorners   Int? // = homeCorners + awayCorners when both present; stored directly for convenience/auditability
+  homeCards      Int? // yellow + red combined — this app's settlement convention, see espnMatchResult.ts
+  awayCards      Int?
+  totalCards     Int?
+
+  firstScoringTeam String? // "home" | "away" | null (0-0, or undeterminable)
+  lastScoringTeam  String? // "home" | "away" | null
+  penaltyAwarded   Boolean? // null = couldn't determine (see espnMatchResult.ts — best-effort, unverified detection)
+
+  source    String // "espn" | "the-odds-api" | "espn+the-odds-api" — which source(s) actually supplied this row, for auditability
+  fetchedAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// A point-in-time odds reading for one event/market/bookmaker. INERT as of
+// 2026-08-03: nothing writes new rows anymore (fixture discovery moved to
+// ESPN and odds moved to the model's own web search — see
+// fixtureIngestion.ts's file header). Kept, not dropped, specifically to
+// preserve the 25,952 rows of history already accumulated — read-only via
+// GET /api/odds/:eventId (src/api/routes/odds.ts) for looking back later;
+// no write path exists anymore.
+model OddsSnapshot {
+  id         Int      @id @default(autoincrement())
+  eventId    Int
+  event      Event    @relation(fields: [eventId], references: [id])
+  bookmaker  String
+  marketType String
+  // JSON array of { name, price, point? } outcomes, e.g.
+  // [{ "name": "Arsenal", "price": 1.85 }, { "name": "Chelsea", "price": 4.2 }]
+  outcomes   String
+  fetchedAt  DateTime @default(now())
+
+  @@index([eventId, marketType, fetchedAt])
+}
+
+// News/context items pulled on a schedule, scoped to a sport (or general).
+model NewsItem {
+  id          Int      @id @default(autoincrement())
+  sportKey    String? // null = general sports news
+  title       String
+  summary     String?
+  url         String
+  source      String
+  publishedAt DateTime
+  fetchedAt   DateTime @default(now())
+
+  @@index([sportKey, publishedAt])
+}
+
+// Reliability tracking for ingestion-time data sources (currently:
+// "the-odds-api", "bbc-sport-rss", "espn-match-stats" — see
+// src/lib/dataSourceHealth.ts). One row per sourceId. A source that fails
+// or comes back empty 3 cycles in a row gets disabled automatically
+// (disabled=true) so ingestion stops wasting calls on something that's
+// clearly broken; while disabled, it's retried once every 24h
+// (lastAttemptAt gates this), and any success immediately re-enables it.
+model DataSourceHealth {
+  id                 Int       @id @default(autoincrement())
+  sourceId           String    @unique
+  consecutiveFailures Int      @default(0)
+  lastAttemptAt      DateTime?
+  lastSuccessAt      DateTime?
+  disabled           Boolean   @default(false)
+  // Added 2026-08-04 — distinguishes WHY a source is disabled. Null means
+  // the ordinary 3-consecutive-failures/empty-results reason (see
+  // dataSourceHealth.ts). "quota_exhausted" means a provider's own request
+  // quota hit zero (currently only SofaScore, the app's sole xG source,
+  // 200 requests/~31 days) — a fundamentally different situation from a
+  // genuinely broken source: it needs no fixing, just time, and lumping it
+  // into the generic disabled state would make quota exhaustion
+  // indistinguishable from an actual outage on the D4 dashboard warning.
+  // Cleared back to null on the next recorded success, same as disabled.
+  disabledReason     String?
+  updatedAt          DateTime  @updatedAt
+}
+
+// The AI agent's advisory output for an event/market. Never auto-executed —
+// surfaced in the dashboard for the user to review and act on manually.
+model Pick {
+  id             Int      @id @default(autoincrement())
+  // @unique (added 2026-08-02): ONE pick per fixture, enforced at the DB
+  // level, not just by app convention. Before this, re-analysing a
+  // fixture via POST /api/picks/generate always INSERTed a new row rather
+  // than replacing the old one — harmless-looking, but each extra row is
+  // both a wasted paid/subscription analysis of the same event AND a
+  // second, correlated observation polluting calibration.ts's hit-rate
+  // math as if it were an independent data point (confirmed live: 7
+  // fixtures had accumulated 2-3 Picks each from repeated
+  // analysis/re-analysis, 8 duplicate rows total, cleaned up in the same
+  // migration that added this constraint). analyzeEvent.ts now upserts on
+  // eventId instead of always creating — see its own comment for why
+  // nearly every field is overwritten on that path, not merged.
+  eventId        Int      @unique
+  event          Event    @relation(fields: [eventId], references: [id])
+  marketType     String
+  recommendation String // e.g. "Arsenal to win", "Over 2.5 goals"
+  confidence     Float // 0-1
+  reasoning      String // LLM's explanation, cites the news/odds it used
+  modelProvider  String // "claude" | "openai" | "mock"
+  modelName      String
+  createdAt      DateTime @default(now())
+
+  // Added 2026-08-01 alongside the web-search-enabled analysis prompt (see
+  // AgentRecommendation in src/agents/AgentProvider.ts for what populates
+  // each of these). SQLite has no native JSON column type, so the array/
+  // object fields are stored as JSON strings and parsed back out wherever
+  // they're read (e.g. GET /api/picks) rather than modeled as relations —
+  // they're supplementary display detail for one Pick, not queried data.
+  keyFactors        String  @default("[]") // JSON string[]
+  // dataGaps (free text) covers gaps OUTSIDE dataAvailability's 9 fixed
+  // categories — a specific unresolved ambiguity, not "this category was
+  // missing" (that's dataAvailability's job now).
+  dataGaps          String  @default("[]") // JSON string[]
+  // Added 2026-08-04 — see DataAvailabilityChecklist in AgentProvider.ts.
+  // JSON {xg, corners, cards, lineups, injuries, weather, referee, h2h,
+  // oddsFeed}, each "available"|"unavailable"|"partial". Fixes a real
+  // measurement gap found auditing the first 25 picks: free-text dataGaps
+  // couldn't distinguish "the model had xG and didn't mention it" from
+  // "the model genuinely never had it" — this makes every pick report all
+  // 9 categories explicitly, every time, rather than only the ones that
+  // happened to get a free-text mention.
+  dataAvailability  String  @default("{}")
+  searchesPerformed String  @default("[]") // JSON string[] — model's own "query — what it resolved" account
+  runnerUp          String? // JSON {market, whyWeaker} | null
+  searchesUsed      Int     @default(0) // ClaudeAgent only — authoritative count from the API's own usage.server_tool_use
+  degradedAnalysis  Boolean @default(false) // true when FallbackAgent fell through past Claude (search-capable) to reach this result
+  // Added 2026-08-01 alongside the search-primary/structured-data-verification
+  // restructure — JSON Discrepancy[] (see AgentProvider.ts), empty "[]"
+  // when search and structured data agreed (or only one had a given
+  // fact) for the whole analysis. A pattern of frequent discrepancies
+  // pointing at the same structured source over many picks would be a
+  // real signal that source has an accuracy problem worth investigating.
+  discrepancies     String  @default("[]")
+
+  // Added 2026-08-04 — flags a pick whose reported data gap can't be
+  // attributed to a known cause. DataSourceHealth keeps no history (one
+  // mutable row per source, overwritten on every attempt — see
+  // dataSourceHealth.ts), so for most gaps there's no way after the fact
+  // to tell "the model genuinely never had this data" apart from "a
+  // provider was silently disabled during this specific pick's
+  // generation window." For these 3 picks specifically, live ESPN
+  // team-resolution checks ruled out the usual explanation (a team-name
+  // mismatch against ESPN's own listing, which is structural and
+  // timeless) — the named teams resolve fine today, so the original gap
+  // can't be explained that way either, leaving no way to confirm or
+  // rule out a disabled-provider cause. Sits alongside dataGaps/
+  // dataAvailability rather than replacing them: this doesn't say the
+  // gap wasn't real, only that its cause is unknown — so any future
+  // aggregate over "all graded picks" shouldn't treat these as equally
+  // well-understood as a pick whose gap has a confirmed cause.
+  dataGapAttributionUncertain Boolean @default(false)
+
+  // Added 2026-08-01 — see settlement.ts. `outcome` is null until settled;
+  // "won" | "lost" | "push" | "unsettleable" once settlement.ts has run
+  // against this event's MatchResult. "unsettleable" is a real, expected
+  // outcome for some markets (e.g. method_of_victory, total_corners/
+  // total_cards as currently defined — see settlement.ts's own comments
+  // for the full list) — it's not a bug or a TODO, it means this app
+  // genuinely cannot grade that market from the result data it has.
+  outcome    String?
+  settledAt  DateTime?
+
+  // Added 2026-08-01 — see critiquePass.ts. Only runs for picks whose
+  // ORIGINAL confidence was >= CRITIQUE_CONFIDENCE_THRESHOLD (0.65), and
+  // only when ENABLE_CRITIQUE_PASS isn't "false". `preCritique*` holds
+  // the pre-critique recommendation/confidence/reasoning so the change
+  // (or lack of one) is visible after the fact — the main
+  // recommendation/confidence/reasoning columns above always hold the
+  // FINAL, post-critique answer when critique ran, so every other part
+  // of this app (settlement, calibration, the dashboard card) keeps
+  // working against "the" recommendation without needing to know
+  // critique happened at all.
+  critiqued              Boolean @default(false)
+  preCritiqueRecommendation String?
+  preCritiqueConfidence     Float?
+  preCritiqueReasoning      String?
+  critiqueNotes             String? // the critique pass's own explanation of what it changed and why (or why it left the pick unchanged)
+
+  // Added 2026-08-02 — closes a real observability gap found reviewing
+  // 2026-08-01's picks: analyzeEvent.ts already caught runCritiquePass
+  // errors and silently kept the pre-critique result (correct behavior —
+  // a broken critique pass shouldn't fail an otherwise-usable pick), but
+  // the only trace of that was a console.error that doesn't survive a
+  // server restart. `critiqued=false` was then indistinguishable between
+  // "confidence never cleared the threshold" and "cleared it, critique
+  // was attempted, and silently broke" — a real difference worth seeing.
+  // critiqueAttempted is true whenever shouldRunCritique() said yes,
+  // regardless of outcome; critiqueAttemptFailed/critiqueError are only
+  // ever set together with critiqueAttempted=true and critiqued=false.
+  critiqueAttempted      Boolean @default(false)
+  critiqueAttemptFailed  Boolean @default(false)
+  critiqueError          String?
+
+  // Closing line value (added 2026-08-03) — see src/lib/clv.ts. A
+  // proxy-for-edge signal that's meaningful on far smaller samples than
+  // win rate: if the market moves toward a pick's side after it's made,
+  // that's evidence the read was ahead of the market. Only computable for
+  // markets this app can map onto an h2h quote (currently: match_winner
+  // only — draw_no_bet/double_chance are derived/combined markets with no
+  // direct quote, and every corners/cards/goals-total market has no odds
+  // coverage from The Odds API at all, h2h-only per this app's scope).
+  // clvCaptured is the honest-coverage flag: true only when oddsAtPick
+  // was actually captured (right market type AND odds data existed at
+  // that moment) — false, not a guess or an approximation from a
+  // different market, whenever it wasn't.
+  //
+  // NOT sourced from the old continuously-polled OddsSnapshot table —
+  // that ingestion path was removed 2026-08-03 alongside the ESPN
+  // fixture/search-based-odds pivot (see fixtureIngestion.ts). This is
+  // its own lightweight, two-point-in-time mechanism: one live odds check
+  // at analysis time (oddsAtPick), one more near kickoff (closingOdds,
+  // via clvScheduler.ts) — no continuous polling needed for just two
+  // numbers per pick.
+  oddsAtPick   Float?
+  closingOdds  Float?
+  clvDelta     Float? // closingOdds - oddsAtPick; positive = market moved toward the pick
+  clvCaptured  Boolean @default(false)
+  // Added 2026-08-04 — closes a real measurement gap found auditing the
+  // first 25 graded picks: pick 103's clvCaptured=true came from a manual
+  // backfill script (real historical OddsSnapshot data, run to prove the
+  // computation logic during Part 1's verification), not the production
+  // capture path in analyzeEvent.ts actually succeeding — and there was
+  // no field distinguishing the two, so that correction had to be made by
+  // hand by re-deriving pick creation dates against the migration
+  // timestamp. "live" = captured by analyzeEvent.ts/clv.ts's own capture
+  // functions during real pick generation; "backfill" = populated after
+  // the fact from historical data for verification/analysis purposes.
+  // Null whenever clvCaptured is false — there's no source to record for
+  // a capture that didn't happen. Live and backfill values must never be
+  // aggregated together in reporting without this distinction visible.
+  clvCaptureSource String?
+}

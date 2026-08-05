@@ -1,0 +1,210 @@
+#!/usr/bin/env bash
+#
+# Sports Edge — Oracle Cloud Always Free provisioning script.
+#
+# Idempotent: safe to re-run. First run does full setup; later runs pull
+# the latest code, rebuild, re-migrate, and restart the service — this one
+# script is both the installer and the redeploy mechanism.
+#
+# Assumes a fresh Ubuntu 22.04/24.04 LTS instance (Oracle's Always Free
+# Ampere A1 or AMD Micro shapes both work fine — everything here is
+# installed via each project's official apt repo, which handles
+# architecture automatically). Run as root (or via sudo).
+#
+# Usage:
+#   REPO_URL="https://github.com/you/sports-edge.git" \
+#   DUCKDNS_SUBDOMAIN="your-chosen-name" \
+#   DUCKDNS_TOKEN="your-duckdns-token" \
+#   ./setup.sh
+#
+# DUCKDNS_SUBDOMAIN/DUCKDNS_TOKEN are optional — omit them and this just
+# skips the DNS step, leaving Caddy on a bare-IP fallback (see Caddyfile).
+#
+# What this does NOT do (see ../docs/oracle-runbook.md for these):
+#   - Create the Oracle account/instance, or open the VCN ingress rule —
+#     only you can click those buttons.
+#   - Create the free DuckDNS subdomain itself — sign up at duckdns.org,
+#     pick a name, get a token, THEN pass them in above.
+#   - Populate /etc/sports-edge/sports-edge.env with real secrets — this
+#     script creates the file with placeholders on first run and refuses
+#     to overwrite it after that, but the actual values (API keys, the
+#     auth secret, Anthropic auth) are yours to fill in.
+#   - Log the `claude` CLI into your Anthropic account — that's an
+#     interactive login flow this script can't drive non-interactively.
+
+set -euo pipefail
+
+REPO_URL="${REPO_URL:-}"
+DUCKDNS_SUBDOMAIN="${DUCKDNS_SUBDOMAIN:-}"
+DUCKDNS_TOKEN="${DUCKDNS_TOKEN:-}"
+APP_USER="sports-edge"
+APP_DIR="/opt/sports-edge/app"
+DATA_DIR="/opt/sports-edge/data"
+ENV_DIR="/etc/sports-edge"
+ENV_FILE="$ENV_DIR/sports-edge.env"
+SERVICE_NAME="sports-edge"
+NODE_MAJOR="22"
+
+if [ "$(id -u)" -ne 0 ]; then
+  echo "Run this as root (or with sudo)." >&2
+  exit 1
+fi
+
+echo "=== 1/9: system packages ==="
+apt-get update -y
+apt-get install -y curl ca-certificates gnupg sqlite3
+
+echo "=== 2/9: Node ${NODE_MAJOR}.x (NodeSource) ==="
+if ! command -v node >/dev/null 2>&1 || [ "$(node --version | cut -d. -f1 | tr -d v)" -lt "$NODE_MAJOR" ]; then
+  curl -fsSL "https://deb.nodesource.com/setup_${NODE_MAJOR}.x" | bash -
+  apt-get install -y nodejs
+else
+  echo "Node $(node --version) already installed, skipping."
+fi
+
+echo "=== 3/9: Claude Code CLI ==="
+# The app shells out to this (see src/agents/ClaudeCodeAgent.ts) — it's a
+# separate install from the app itself. Installed globally so it's on
+# every user's PATH, including the systemd service's.
+npm install -g @anthropic-ai/claude-code
+
+echo "=== 4/9: app user + directories ==="
+id -u "$APP_USER" >/dev/null 2>&1 || useradd --system --create-home --shell /usr/sbin/nologin "$APP_USER"
+mkdir -p "$APP_DIR" "$DATA_DIR" "$ENV_DIR"
+chown -R "$APP_USER:$APP_USER" "/opt/sports-edge" "$DATA_DIR"
+
+echo "=== 5/9: clone or pull the repo ==="
+if [ -z "$REPO_URL" ] && [ ! -d "$APP_DIR/.git" ]; then
+  echo "REPO_URL is not set and $APP_DIR has no existing checkout — nothing to clone." >&2
+  echo "Re-run as: REPO_URL=<your git remote> ./setup.sh" >&2
+  exit 1
+fi
+if [ -d "$APP_DIR/.git" ]; then
+  echo "Existing checkout found — pulling latest."
+  sudo -u "$APP_USER" git -C "$APP_DIR" pull --ff-only
+else
+  sudo -u "$APP_USER" git clone "$REPO_URL" "$APP_DIR"
+fi
+
+echo "=== 6/9: install deps, build, migrate ==="
+cd "$APP_DIR"
+sudo -u "$APP_USER" npm install
+sudo -u "$APP_USER" npm run build
+
+# DATABASE_URL points at the persistent data dir, OUTSIDE the git-managed
+# app dir — a `git pull` on redeploy never touches the actual database.
+# Set here (not just in the env file) so `prisma migrate deploy` uses the
+# same path the running service will.
+export DATABASE_URL="file:$DATA_DIR/prod.db"
+sudo -u "$APP_USER" env DATABASE_URL="$DATABASE_URL" npx prisma migrate deploy
+
+echo "=== 7/9: env file (secrets — placeholders only, won't overwrite) ==="
+if [ ! -f "$ENV_FILE" ]; then
+  cat > "$ENV_FILE" << 'ENVEOF'
+# Sports Edge — production environment. Fill in every REPLACE_ME below.
+# See ../docs/oracle-runbook.md for what each one is and where to get it.
+# This file is NOT part of the git repo and a redeploy (git pull) never
+# touches it.
+
+PORT=3000
+DATABASE_URL=file:/opt/sports-edge/data/prod.db
+
+# Shared-secret auth gate (src/api/authMiddleware.ts) — REQUIRED before
+# exposing this to the internet. Any password works with any username in
+# the browser's Basic Auth prompt; only this value is actually checked.
+AUTH_SHARED_SECRET=REPLACE_ME
+
+# Rotated key (see the 2026-08 audit — the old one was exposed in this
+# machine's local session transcripts and is being rotated separately).
+THE_ODDS_API_KEY=REPLACE_ME
+ODDS_PROVIDER=the-odds-api
+ODDS_REGIONS=uk
+
+NEWSAPI_KEY=REPLACE_ME
+API_FOOTBALL_KEY=REPLACE_ME
+SPORTMONKS_API_KEY=REPLACE_ME
+FOOTBALL_DATA_API_KEY=REPLACE_ME
+OPENWEATHERMAP_API_KEY=REPLACE_ME
+SOFASCORE_RAPIDAPI_KEY=REPLACE_ME
+
+# Real analysis calls routinely take longer than the CLI's 180s default —
+# confirmed live during this deployment's own testing (3 of 4 real picks
+# timed out at the default). 420000 (7min) held up in practice.
+CLAUDE_CODE_TIMEOUT_MS=420000
+
+# Poll intervals — see each scheduler file's own header comment for why
+# these particular defaults. Uncomment to override.
+# FIXTURE_POLL_INTERVAL_HOURS=24
+# NEWS_POLL_INTERVAL_MINUTES=15
+# RESULTS_POLL_INTERVAL_HOURS=24
+# CLV_POLL_INTERVAL_MINUTES=30
+ENVEOF
+  chown "$APP_USER:$APP_USER" "$ENV_FILE"
+  chmod 600 "$ENV_FILE"
+  echo ">>> Created $ENV_FILE with placeholders — edit it before starting the service (see runbook)."
+else
+  echo "$ENV_FILE already exists, leaving it alone."
+fi
+
+echo "=== 8/9: DuckDNS (free subdomain -> this instance's public IP) ==="
+if [ -n "$DUCKDNS_SUBDOMAIN" ] && [ -n "$DUCKDNS_TOKEN" ]; then
+  mkdir -p /opt/duckdns
+  cat > /opt/duckdns/update.sh << DUCKEOF
+#!/usr/bin/env bash
+# ip= left blank on purpose — DuckDNS uses the requesting connection's own
+# address, so this always points at wherever this script actually runs
+# from, no manual IP lookup needed.
+curl -fsS "https://www.duckdns.org/update?domains=${DUCKDNS_SUBDOMAIN}&token=${DUCKDNS_TOKEN}&ip=" -o /var/log/duckdns.log
+DUCKEOF
+  chmod +x /opt/duckdns/update.sh
+  /opt/duckdns/update.sh
+  echo "DuckDNS response: $(cat /var/log/duckdns.log)"
+  # Oracle's Always Free public IP is stable across reboots in practice,
+  # but not contractually guaranteed the way a Reserved/Elastic IP would
+  # be — this cron is cheap insurance (one small HTTP call) against ever
+  # needing to notice and fix a silently stale DNS record by hand.
+  (crontab -l 2>/dev/null | grep -v duckdns/update.sh; echo "*/5 * * * * /opt/duckdns/update.sh") | crontab -
+  echo ">>> DNS: ${DUCKDNS_SUBDOMAIN}.duckdns.org now points at this instance, refreshed every 5min."
+else
+  echo "DUCKDNS_SUBDOMAIN/DUCKDNS_TOKEN not set — skipping. Caddy will need a real domain before it can get an automatic HTTPS cert (see Caddyfile's bare-IP fallback for a no-domain smoke test)."
+fi
+
+echo "=== 9/9: systemd unit ==="
+cat > "/etc/systemd/system/${SERVICE_NAME}.service" << UNITEOF
+[Unit]
+Description=Sports Edge
+After=network.target
+
+[Service]
+Type=simple
+User=${APP_USER}
+WorkingDirectory=${APP_DIR}
+EnvironmentFile=${ENV_FILE}
+ExecStart=/usr/bin/node ${APP_DIR}/dist/index.js
+Restart=on-failure
+RestartSec=5
+# Belt-and-braces on top of RestartSec: 5 crashes in 60s means something's
+# structurally broken, not transient — stop instead of restart-looping
+# forever and hammering whatever's failing (an API, the DB, etc).
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Install]
+WantedBy=multi-user.target
+UNITEOF
+
+systemctl daemon-reload
+systemctl enable "$SERVICE_NAME"
+
+if grep -q "REPLACE_ME" "$ENV_FILE"; then
+  echo ""
+  echo "=== Setup complete, but NOT starting the service yet ==="
+  echo "$ENV_FILE still has REPLACE_ME placeholders. Fill in real values,"
+  echo "log the claude CLI in (see runbook), then run:"
+  echo "  systemctl start ${SERVICE_NAME}"
+else
+  systemctl restart "$SERVICE_NAME"
+  echo ""
+  echo "=== Setup complete, service (re)started ==="
+  echo "systemctl status ${SERVICE_NAME}"
+fi

@@ -1,0 +1,55 @@
+# Sports Edge — Caddy reverse proxy config.
+#
+# Uses DuckDNS (duckdns.org) — free, no domain purchase needed.
+# deploy/setup.sh's DuckDNS step points your-chosen-name.duckdns.org at
+# this instance's public IP; replace the block header below with whatever
+# name you actually picked when signing up. Caddy's automatic HTTPS (via
+# Let's Encrypt) needs a real domain to issue a certificate against — it
+# can't get one for a bare IP, which is the whole reason this needs DNS at
+# all rather than just hitting the instance's IP directly. This matters
+# more than usual here because the auth gate (src/api/authMiddleware.ts)
+# is HTTP Basic Auth, which sends the shared secret in a
+# trivially-decodable form on every request — fine over HTTPS, genuinely
+# exposed over plain HTTP.
+#
+# Install (Ubuntu, official Caddy apt repo — handles ARM64/AMD64 both):
+#   apt-get install -y debian-keyring debian-archive-keyring apt-transport-https
+#   curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | \
+#     gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+#   curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | \
+#     tee /etc/apt/sources.list.d/caddy-stable.list
+#   apt-get update && apt-get install -y caddy
+#
+# Deploy this file:
+#   cp Caddyfile /etc/caddy/Caddyfile
+#   systemctl reload caddy
+
+your-chosen-name.duckdns.org {
+	reverse_proxy localhost:3000
+
+	# Caddy's own access log — separate from the app's, useful for seeing
+	# what's actually hitting the box before it reaches the auth gate.
+	log {
+		output file /var/log/caddy/sports-edge-access.log
+		format json
+	}
+
+	# Modest defense against a slow-loris-style resource exhaustion —
+	# proportionate for a single-user advisory tool sitting on a Free-tier
+	# VM, not something under active attack, but cheap to set and it's the
+	# kind of thing worth having by default rather than after a problem.
+	timeouts {
+		read_body 10s
+		read_header 5s
+	}
+}
+
+# Fallback if you genuinely want IP-only access with no domain yet — plain
+# HTTP, no automatic HTTPS possible without a domain for Caddy to issue a
+# cert against. Basic Auth over plain HTTP means the shared secret is
+# readable to anything on the network path; only use this for a quick
+# initial smoke test, not real use, and remove it once your-chosen-name.duckdns.org
+# above is live.
+# :80 {
+# 	reverse_proxy localhost:3000
+# }

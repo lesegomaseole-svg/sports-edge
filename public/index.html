@@ -1,0 +1,829 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Sports Edge</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/dist/tabler-icons.min.css" />
+<style>
+  :root {
+    color-scheme: dark;
+    --bg: #0a0c10;
+    --bg-elevated: #0f1218;
+    --surface: #151922;
+    --surface-hover: #1b202b;
+    --border: #232936;
+    --border-subtle: #191e28;
+    --text-primary: #e9ecf1;
+    --text-secondary: #9aa5b5;
+    --text-muted: #5c6674;
+    --accent: #5b8cff;
+    --accent-soft: rgba(91, 140, 255, 0.14);
+    --success: #34d399;
+    --success-soft: rgba(52, 211, 153, 0.14);
+    --warning: #fbbf24;
+    --warning-soft: rgba(251, 191, 36, 0.14);
+    --danger: #f87171;
+    --danger-soft: rgba(248, 113, 113, 0.14);
+    --radius-sm: 7px;
+    --radius-md: 12px;
+    --radius-lg: 16px;
+    --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    font-family: var(--font-sans);
+    background: var(--bg);
+    color: var(--text-primary);
+    -webkit-font-smoothing: antialiased;
+  }
+  a { color: inherit; }
+
+  header {
+    padding: 18px 32px;
+    border-bottom: 1px solid var(--border-subtle);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: var(--bg-elevated);
+    position: sticky;
+    top: 0;
+    z-index: 10;
+  }
+  header .brand { display: flex; align-items: center; gap: 10px; }
+  header .brand .mark {
+    width: 30px; height: 30px; border-radius: 9px;
+    background: linear-gradient(135deg, var(--accent), #7db3ff);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 15px; color: #fff;
+  }
+  header h1 { font-size: 16px; margin: 0; font-weight: 650; letter-spacing: -0.01em; }
+  header .sub { font-size: 11.5px; color: var(--text-muted); margin-top: 1px; }
+  .status-pill {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 12px; color: var(--text-secondary);
+    padding: 5px 12px; border-radius: 999px; border: 1px solid var(--border);
+    background: var(--surface);
+  }
+  .status-pill .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--text-muted); }
+  .status-pill.ok .dot { background: var(--success); box-shadow: 0 0 0 3px var(--success-soft); }
+  .status-pill.warn { color: var(--danger); border-color: var(--danger-soft); background: var(--danger-soft); cursor: help; }
+  .status-pill.warn .dot { background: var(--danger); box-shadow: 0 0 0 3px var(--danger-soft); }
+
+  nav {
+    display: flex; gap: 4px; padding: 0 32px;
+    border-bottom: 1px solid var(--border-subtle);
+    background: var(--bg-elevated);
+  }
+  nav button {
+    background: none; border: none; color: var(--text-secondary);
+    padding: 13px 6px; margin-right: 22px; cursor: pointer;
+    font-size: 13.5px; font-weight: 550; font-family: inherit;
+    border-bottom: 2px solid transparent;
+    display: flex; align-items: center; gap: 7px;
+    transition: color .15s;
+  }
+  nav button i { font-size: 16px; }
+  nav button:hover { color: var(--text-primary); }
+  nav button.active { color: var(--text-primary); border-bottom-color: var(--accent); }
+
+  main { padding: 28px 32px 60px; max-width: 1180px; margin: 0 auto; }
+  .panel { display: none; }
+  .panel.active { display: block; animation: fadein .15s ease; }
+  @keyframes fadein { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }
+
+  /* ---- summary metrics ---- */
+  .metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 14px; margin-bottom: 26px; }
+  .metric-card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg);
+    padding: 18px 20px;
+  }
+  .metric-card .label { font-size: 11.5px; text-transform: uppercase; letter-spacing: .06em; color: var(--text-muted); font-weight: 600; }
+  .metric-card .value { font-size: 30px; font-weight: 680; margin-top: 8px; letter-spacing: -0.02em; }
+  .metric-card .value .unit { font-size: 15px; color: var(--text-secondary); font-weight: 500; margin-left: 4px; }
+  .metric-card.accent-success .value { color: var(--success); }
+  .metric-card.accent-blue .value { color: var(--accent); }
+
+  h2.section-title {
+    font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--text-muted);
+    font-weight: 650; margin: 0 0 12px;
+  }
+
+  .sample-warning {
+    display: flex; align-items: center; gap: 8px;
+    background: var(--warning-soft); color: var(--warning);
+    border-radius: var(--radius-sm); padding: 10px 14px; margin-bottom: 18px;
+    font-size: 12.5px; font-weight: 600;
+  }
+  .sample-warning i { font-size: 15px; flex-shrink: 0; }
+
+  .track-table { width: 100%; border-collapse: collapse; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; margin-bottom: 24px; }
+  .track-table th, .track-table td { padding: 10px 14px; text-align: left; font-size: 13px; border-bottom: 1px solid var(--border-subtle); }
+  .track-table th { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--text-muted); font-weight: 650; background: var(--bg-elevated); }
+  .track-table tr:last-child td { border-bottom: none; }
+  .track-table td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .track-table .unreliable { color: var(--text-muted); font-style: italic; }
+  .track-table .reliable-badge { font-size: 10px; color: var(--text-muted); margin-left: 6px; }
+
+  /* ---- fixture cards ---- */
+  .fixture-grid { display: flex; flex-direction: column; gap: 12px; }
+  .fixture-card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg);
+    padding: 18px 20px; transition: border-color .15s, background .15s;
+  }
+  .fixture-card:hover { border-color: #2c3341; }
+  .fixture-card.unanalyzed { background: var(--bg-elevated); }
+  .fixture-card.unanalyzed .matchup { opacity: .72; }
+
+  .fixture-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
+  .league-badge {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 11px; font-weight: 650; color: var(--accent);
+    background: var(--accent-soft); padding: 4px 10px; border-radius: 999px;
+    text-transform: uppercase; letter-spacing: .03em;
+  }
+  .kickoff { font-size: 12px; color: var(--text-muted); display: flex; align-items: center; gap: 5px; }
+
+  .matchup { display: flex; align-items: center; gap: 14px; margin-bottom: 4px; }
+  .team { display: flex; align-items: center; gap: 9px; flex: 1; min-width: 0; }
+  .team.away { flex-direction: row-reverse; text-align: right; }
+  .avatar {
+    width: 30px; height: 30px; border-radius: 9px; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 11.5px; font-weight: 700; color: #0a0c10;
+  }
+  .team-name { font-size: 14.5px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .vs { font-size: 11px; color: var(--text-muted); font-weight: 600; flex-shrink: 0; }
+
+  .analysis { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border-subtle); }
+  .analysis-top { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
+  .market-badge {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 12px; font-weight: 600; padding: 5px 11px; border-radius: 999px;
+    background: var(--surface-hover); border: 1px solid var(--border); color: var(--text-primary);
+  }
+  .market-badge i { font-size: 14px; color: var(--accent); }
+  .market-badge.none i { color: var(--text-muted); }
+
+  .conf-badge { font-size: 11px; font-weight: 700; padding: 4px 10px; border-radius: 999px; letter-spacing: .01em; }
+  .conf-badge.high { background: var(--success-soft); color: var(--success); }
+  .conf-badge.mid { background: var(--warning-soft); color: var(--warning); }
+  .conf-badge.low { background: rgba(148,163,184,.12); color: var(--text-muted); }
+
+  .recommendation { font-size: 15px; font-weight: 650; margin: 6px 0 6px; letter-spacing: -0.005em; }
+  .reasoning { font-size: 13px; color: var(--text-secondary); line-height: 1.55; }
+  .reasoning-toggle {
+    background: none; border: none; color: var(--accent); font-size: 12px; font-weight: 600;
+    cursor: pointer; padding: 6px 0 0; font-family: inherit;
+  }
+
+  .meta-row { font-size: 11.5px; color: var(--text-muted); margin-top: 10px; display: flex; gap: 6px; align-items: center; }
+
+  .search-badge {
+    display: inline-flex; align-items: center; gap: 5px;
+    font-size: 11px; font-weight: 600; padding: 4px 9px; border-radius: 999px;
+    background: var(--accent-soft); color: var(--accent);
+  }
+  .search-badge i { font-size: 12px; }
+
+  .degraded-note {
+    display: flex; align-items: center; gap: 6px;
+    font-size: 11.5px; font-weight: 600; color: var(--danger);
+    background: var(--danger-soft); border-radius: var(--radius-sm);
+    padding: 6px 10px; margin-bottom: 8px;
+  }
+  .degraded-note i { font-size: 13px; }
+
+  .key-factors { margin: 4px 0 8px; padding-left: 18px; font-size: 12.5px; color: var(--text-secondary); line-height: 1.6; }
+  .key-factors li { margin-bottom: 2px; }
+
+  .runner-up { font-size: 12px; color: var(--text-secondary); margin-top: 8px; }
+  .runner-up strong { color: var(--text-primary); font-weight: 600; }
+
+  .data-gaps { font-size: 11.5px; color: var(--text-muted); margin-top: 6px; font-style: italic; }
+
+  .outcome-badge { font-size: 11px; font-weight: 700; padding: 4px 10px; border-radius: 999px; text-transform: capitalize; }
+  .outcome-badge.outcome-won { background: var(--success-soft); color: var(--success); }
+  .outcome-badge.outcome-lost { background: var(--danger-soft); color: var(--danger); }
+  .outcome-badge.outcome-push { background: rgba(148,163,184,.12); color: var(--text-muted); }
+  .outcome-badge.outcome-unsettleable { background: rgba(148,163,184,.12); color: var(--text-muted); }
+
+  .critique-block {
+    margin-top: 10px; padding: 10px 12px; border-radius: var(--radius-sm);
+    background: var(--accent-soft); border: 1px solid var(--border);
+  }
+  .critique-label { font-size: 11px; font-weight: 700; color: var(--accent); display: flex; align-items: center; gap: 5px; margin-bottom: 6px; }
+  .critique-before { font-size: 12px; color: var(--text-muted); margin-bottom: 4px; }
+  .critique-before s { opacity: .8; }
+  .critique-block.critique-failed { background: var(--warning-soft); }
+  .critique-failed-label { color: var(--warning); }
+  .critique-after { font-size: 12px; color: var(--text-secondary); }
+
+  .discrepancy-block {
+    margin-top: 10px; padding: 10px 12px; border-radius: var(--radius-sm);
+    background: var(--warning-soft); border: 1px solid var(--border);
+  }
+  .discrepancy-label { font-size: 11px; font-weight: 700; color: var(--warning); display: flex; align-items: center; gap: 5px; margin-bottom: 8px; }
+  .discrepancy-row { padding: 6px 0; border-top: 1px solid var(--border-subtle); }
+  .discrepancy-row:first-of-type { border-top: none; padding-top: 0; }
+  .discrepancy-fact { font-size: 12px; font-weight: 600; color: var(--text-primary); }
+  .discrepancy-values { font-size: 11.5px; color: var(--text-secondary); margin-top: 2px; }
+  .dv-search { color: var(--accent); }
+  .dv-api { color: var(--text-muted); }
+  .discrepancy-resolution { font-size: 11.5px; color: var(--text-muted); margin-top: 2px; font-style: italic; }
+
+  .btn {
+    background: var(--surface-hover); border: 1px solid var(--border); color: var(--text-primary);
+    padding: 8px 16px; border-radius: var(--radius-sm); cursor: pointer; font-size: 12.5px; font-weight: 600;
+    font-family: inherit; display: inline-flex; align-items: center; gap: 6px; transition: background .15s, border-color .15s;
+  }
+  .btn:hover { background: #212734; border-color: #333c4d; }
+  .btn:disabled { opacity: .55; cursor: default; }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .btn.primary:hover { background: #4a7de8; }
+  .reanalyse-btn { margin-top: 10px; }
+
+  .empty {
+    color: var(--text-muted); font-size: 13.5px; padding: 48px 20px; text-align: center;
+    background: var(--surface); border: 1px dashed var(--border); border-radius: var(--radius-lg);
+  }
+
+  /* ---- market manager ---- */
+  .league-group { margin-bottom: 10px; }
+  .league-manager-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; }
+  .league-card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-md);
+    padding: 16px 18px;
+  }
+  .league-card .league-card-title { font-size: 14px; font-weight: 650; margin-bottom: 12px; }
+  .market-row { display: flex; align-items: center; justify-content: space-between; padding: 7px 0; }
+  .market-row + .market-row { border-top: 1px solid var(--border-subtle); }
+  .market-row .market-name { font-size: 12.5px; color: var(--text-secondary); font-weight: 550; }
+  .switch { position: relative; width: 38px; height: 21px; background: #262c38; border-radius: 11px; cursor: pointer; border: none; flex-shrink: 0; transition: background .15s; }
+  .switch.on { background: var(--accent); }
+  .switch::after { content: ""; position: absolute; top: 2.5px; left: 2.5px; width: 16px; height: 16px; background: #fff; border-radius: 50%; transition: left .15s; box-shadow: 0 1px 2px rgba(0,0,0,.3); }
+  .switch.on::after { left: 19px; }
+
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 8px; }
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">
+    <div class="mark"><i class="ti ti-ball-football"></i></div>
+    <div>
+      <h1>Sports Edge</h1>
+      <div class="sub">Soccer analysis, on demand</div>
+    </div>
+  </div>
+  <span class="status-pill" id="status"><span class="dot"></span><span id="status-text">connecting…</span></span>
+  <span class="status-pill warn" id="source-warning" style="display:none"><span class="dot"></span><span id="source-warning-text"></span></span>
+</header>
+<nav>
+  <button data-panel="fixtures" class="active"><i class="ti ti-list-details"></i>Fixtures</button>
+  <button data-panel="markets"><i class="ti ti-adjustments"></i>Market Manager</button>
+  <button data-panel="track-record"><i class="ti ti-chart-line"></i>Track Record</button>
+</nav>
+<main>
+  <section id="panel-fixtures" class="panel active"></section>
+  <section id="panel-markets" class="panel"></section>
+  <section id="panel-track-record" class="panel"></section>
+</main>
+
+<script>
+const API = "/api";
+
+document.querySelectorAll("nav button").forEach(btn => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll("nav button").forEach(b => b.classList.remove("active"));
+    document.querySelectorAll(".panel").forEach(p => p.classList.remove("active"));
+    btn.classList.add("active");
+    document.getElementById("panel-" + btn.dataset.panel).classList.add("active");
+    if (btn.dataset.panel === "markets") loadMarkets();
+    if (btn.dataset.panel === "track-record") loadTrackRecord();
+  });
+});
+
+async function loadHealth() {
+  const pill = document.getElementById("status");
+  const text = document.getElementById("status-text");
+  try {
+    await fetch(API + "/health").then(r => r.json());
+    pill.classList.add("ok");
+    text.textContent = "connected";
+  } catch {
+    text.textContent = "server unreachable";
+  }
+}
+
+// Surfaces currently-disabled data sources directly on the dashboard —
+// previously the only way to notice one of these was to stumble across it
+// in the DB or console during unrelated work (it happened at least 5
+// times). A disabled source means picks are quietly generated with less
+// data than usual, so this is worth seeing at a glance, not just at
+// server-startup in a terminal nobody's watching.
+async function loadDataSourceWarning() {
+  const pill = document.getElementById("source-warning");
+  const text = document.getElementById("source-warning-text");
+  try {
+    const rows = await fetch(API + "/data-sources/health").then(r => r.json());
+    const disabled = rows.filter(r => r.disabled);
+    if (disabled.length === 0) {
+      pill.style.display = "none";
+      return;
+    }
+    // disabledReason (added 2026-08-04): "quota_exhausted" means a
+    // provider's own request budget hit zero, not a real outage — labeled
+    // separately so it doesn't read the same as an actual broken source.
+    const label = r => r.sourceId + (r.disabledReason === "quota_exhausted" ? " (quota exhausted)" : "");
+    text.textContent = disabled.length + " source" + (disabled.length > 1 ? "s" : "") + " disabled: " + disabled.map(label).join(", ");
+    pill.title = "A disabled source is skipped entirely during analysis until it recovers. \"Quota exhausted\" means the provider's own request budget hit zero, not a real outage. See GET /api/data-sources/health for details.";
+    pill.style.display = "inline-flex";
+  } catch {
+    // Data-source health is a supplementary warning, not core dashboard
+    // function — a failed fetch here shouldn't block anything else.
+  }
+}
+
+// ---------- shared helpers ----------
+const AVATAR_COLORS = ["#5b8cff", "#34d399", "#fbbf24", "#f87171", "#a78bfa", "#38bdf8", "#fb923c", "#f472b6", "#4ade80", "#facc15"];
+
+function hashColor(name) {
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash);
+  return AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length];
+}
+
+function initials(name) {
+  const parts = name.replace(/[^\w\s]/g, "").split(/\s+/).filter(Boolean);
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+}
+
+function confidenceTier(c) {
+  return c >= 0.66 ? "high" : c >= 0.4 ? "mid" : "low";
+}
+
+function formatKickoff(iso) {
+  const d = new Date(iso);
+  return d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" }) +
+    " · " + d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+}
+
+// Market id -> { icon: tabler icon name (without "ti-"), label }
+const MARKET_META = {
+  match_winner: { icon: "trophy", label: "Match Winner" },
+  double_chance: { icon: "arrows-shuffle", label: "Double Chance" },
+  draw_no_bet: { icon: "scale", label: "Draw No Bet" },
+  total_goals: { icon: "target", label: "Total Goals" },
+  both_teams_to_score: { icon: "users", label: "BTTS" },
+  team_total_goals: { icon: "target-arrow", label: "Team Total Goals" },
+  clean_sheet: { icon: "shield-check", label: "Clean Sheet" },
+  winning_margin: { icon: "chart-bar", label: "Winning Margin" },
+  half_time_result: { icon: "clock-hour-4", label: "Half-Time Result" },
+  half_time_full_time: { icon: "clock-play", label: "HT/FT" },
+  goal_in_both_halves: { icon: "arrows-split", label: "Goal in Both Halves" },
+  highest_scoring_half: { icon: "chart-arrows", label: "Highest-Scoring Half" },
+  total_corners: { icon: "corner-up-right", label: "Total Corners" },
+  over_under_corners: { icon: "flag", label: "Over/Under Corners" },
+  team_corners: { icon: "flag-3", label: "Team Corners" },
+  total_cards: { icon: "square", label: "Total Cards" },
+  over_under_bookings: { icon: "cards", label: "Over/Under Cards" },
+  team_cards: { icon: "id-badge-2", label: "Team Cards" },
+  odd_even_total_goals: { icon: "hash", label: "Odd/Even Goals" },
+  method_of_victory: { icon: "notes", label: "Method of Victory" },
+  team_to_score_first: { icon: "player-play", label: "First to Score" },
+  team_to_score_last: { icon: "flag-check", label: "Last to Score" },
+  penalty_awarded: { icon: "flag-2", label: "Penalty Awarded" },
+  none: { icon: "help-circle", label: "No clear market" },
+};
+
+function marketMeta(marketType) {
+  return MARKET_META[marketType] || { icon: "help-circle", label: marketType };
+}
+
+// ---------- Fixtures ----------
+async function loadFixtures() {
+  const el = document.getElementById("panel-fixtures");
+  el.innerHTML = '<p class="empty">Loading fixtures…</p>';
+  const fixtures = await fetch(API + "/fixtures/top").then(r => r.json());
+
+  if (fixtures.length === 0) {
+    el.innerHTML = '<p class="empty">No fixtures currently clear the data-sufficiency bar. Enable some leagues in Market Manager and wait for the next ingestion cycle.</p>';
+    return;
+  }
+
+  const analysed = fixtures.filter(f => !f.unanalyzed);
+  const highConf = analysed.filter(f => f.pick.confidence >= 0.66);
+  const leagues = new Set(fixtures.map(f => f.sport.title));
+
+  el.innerHTML = `
+    <div class="metrics">
+      <div class="metric-card accent-blue">
+        <div class="label">Fixtures Analysed</div>
+        <div class="value">${analysed.length}<span class="unit">/ ${fixtures.length}</span></div>
+      </div>
+      <div class="metric-card accent-success">
+        <div class="label">High Confidence</div>
+        <div class="value">${highConf.length}</div>
+      </div>
+      <div class="metric-card">
+        <div class="label">Leagues Covered</div>
+        <div class="value">${leagues.size}</div>
+      </div>
+    </div>
+    <h2 class="section-title">Top Fixtures · ranked by data sufficiency</h2>
+    <div class="fixture-grid"></div>
+  `;
+
+  const grid = el.querySelector(".fixture-grid");
+  for (const fx of fixtures) grid.appendChild(renderFixtureCard(fx));
+}
+
+function renderFixtureCard(fx) {
+  const card = document.createElement("div");
+  card.className = "fixture-card" + (fx.unanalyzed ? " unanalyzed" : "");
+
+  const homeColor = hashColor(fx.homeTeam);
+  const awayColor = hashColor(fx.awayTeam);
+
+  card.innerHTML = `
+    <div class="fixture-top">
+      <span class="league-badge"><i class="ti ti-shield"></i>${fx.sport.title}</span>
+      <span class="kickoff"><i class="ti ti-clock"></i>${formatKickoff(fx.commenceTime)}</span>
+    </div>
+    <div class="matchup">
+      <div class="team home">
+        <div class="avatar" style="background:${homeColor}">${initials(fx.homeTeam)}</div>
+        <span class="team-name">${fx.homeTeam}</span>
+      </div>
+      <span class="vs">VS</span>
+      <div class="team away">
+        <div class="avatar" style="background:${awayColor}">${initials(fx.awayTeam)}</div>
+        <span class="team-name">${fx.awayTeam}</span>
+      </div>
+    </div>
+    <div class="analysis-body"></div>
+  `;
+
+  const body = card.querySelector(".analysis-body");
+
+  if (fx.unanalyzed) {
+    const wrap = document.createElement("div");
+    wrap.className = "analysis";
+    wrap.innerHTML = `<button class="btn primary" data-event="${fx.id}"><i class="ti ti-sparkles"></i>Analyse</button>`;
+    body.appendChild(wrap);
+
+    wrap.querySelector("button").addEventListener("click", async (ev) => {
+      const btn = ev.currentTarget;
+      btn.disabled = true;
+      btn.innerHTML = '<i class="ti ti-loader-2"></i>Analysing…';
+      const res = await fetch(API + "/picks/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ eventId: fx.id }),
+      });
+      if (res.ok) {
+        loadFixtures();
+      } else {
+        const err = await res.json();
+        btn.disabled = false;
+        btn.innerHTML = "Failed: " + (err.error || "unknown error");
+      }
+    });
+    return card;
+  }
+
+  const p = fx.pick;
+  const meta = marketMeta(p.market);
+  const tier = confidenceTier(p.confidence);
+  const shortReasoning = p.reasoning.length > 160 ? p.reasoning.slice(0, 160) + "…" : p.reasoning;
+
+  // No provider-name gate needed — ClaudeCodeAgent is the only agent
+  // provider (2026-08-02) and always sets searchesUsed. Shown whenever
+  // present so it's clear search was available and how much of it got
+  // used, including a genuine 0.
+  const searchBadge = p.searchesUsed != null
+    ? `<span class="search-badge"><i class="ti ti-search"></i>${p.searchesUsed} search${p.searchesUsed === 1 ? "" : "es"}</span>`
+    : "";
+  // degradedAnalysis is always false with the current single-provider
+  // setup (ClaudeCodeAgent always supports search) — this stays wired up
+  // dormant rather than removed, since it's exactly what would light up
+  // again if a non-search-capable fallback provider is ever reintroduced
+  // (see src/agents/index.ts). Provider-name is read dynamically from
+  // p.modelProvider rather than hardcoded, so it stays correct regardless
+  // of which provider that ends up being.
+  const degradedNote = p.degradedAnalysis
+    ? `<div class="degraded-note"><i class="ti ti-alert-triangle"></i>Analysed without web search — ${p.modelProvider} has no search capability</div>`
+    : "";
+  const keyFactorsHtml = p.keyFactors && p.keyFactors.length
+    ? `<ul class="key-factors">${p.keyFactors.map(f => `<li>${f}</li>`).join("")}</ul>`
+    : "";
+  const runnerUpHtml = p.runnerUp && p.runnerUp.market && p.runnerUp.whyWeaker
+    ? `<div class="runner-up"><i class="ti ti-corner-down-right"></i> Runner-up: <strong>${p.runnerUp.market}</strong> — ${p.runnerUp.whyWeaker}</div>`
+    : "";
+  const dataGapsHtml = p.dataGaps && p.dataGaps.length
+    ? `<div class="data-gaps">Data gaps: ${p.dataGaps.join("; ")}</div>`
+    : "";
+  const outcomeBadge = p.outcome
+    ? `<span class="outcome-badge outcome-${p.outcome}">${p.outcome}</span>`
+    : "";
+  const critiqueHtml = p.critiqued
+    ? `<div class="critique-block">
+        <div class="critique-label"><i class="ti ti-shield-check"></i>Passed critique review</div>
+        <div class="critique-before">Before: <s>${p.preCritiqueRecommendation}</s> (${Math.round(p.preCritiqueConfidence * 100)}% confidence)</div>
+        <div class="critique-after">${p.critiqueNotes || ""}</div>
+      </div>`
+    // Added 2026-08-02: distinct from "never triggered" (no badge at
+    // all) — this confidence cleared the critique threshold, a second
+    // pass was attempted, and it errored, so the recommendation below is
+    // still the ORIGINAL, un-critiqued one. See schema.prisma's
+    // Pick.critiqueAttempted comment for why this distinction matters.
+    : p.critiqueAttempted && p.critiqueAttemptFailed
+      ? `<div class="critique-block critique-failed">
+          <div class="critique-label critique-failed-label"><i class="ti ti-alert-triangle"></i>Critique attempted, failed — showing un-critiqued result</div>
+          <div class="critique-after">${p.critiqueError || ""}</div>
+        </div>`
+      : "";
+  const discrepanciesHtml = p.discrepancies && p.discrepancies.length
+    ? `<div class="discrepancy-block">
+        <div class="discrepancy-label"><i class="ti ti-git-compare"></i>${p.discrepancies.length} search/data discrepanc${p.discrepancies.length === 1 ? "y" : "ies"}</div>
+        ${p.discrepancies.map(d => `
+          <div class="discrepancy-row">
+            <div class="discrepancy-fact">${d.fact}</div>
+            <div class="discrepancy-values"><span class="dv-search">Search: ${d.searchValue}</span> vs <span class="dv-api">Data: ${d.apiValue}</span></div>
+            <div class="discrepancy-resolution">${d.resolution}</div>
+          </div>
+        `).join("")}
+      </div>`
+    : "";
+
+  const wrap = document.createElement("div");
+  wrap.className = "analysis";
+  wrap.innerHTML = `
+    <div class="analysis-top">
+      <span class="market-badge ${p.market === "none" ? "none" : ""}"><i class="ti ti-${meta.icon}"></i>${meta.label}</span>
+      <span class="conf-badge ${tier}">${Math.round(p.confidence * 100)}% confidence</span>
+      ${searchBadge}
+      ${outcomeBadge}
+    </div>
+    ${degradedNote}
+    <div class="recommendation">${p.recommendation}</div>
+    ${keyFactorsHtml}
+    <div class="reasoning">${p.reasoning.length > 160 ? shortReasoning : p.reasoning}</div>
+    ${p.reasoning.length > 160 ? '<button class="reasoning-toggle">Show more</button>' : ""}
+    ${runnerUpHtml}
+    ${dataGapsHtml}
+    ${critiqueHtml}
+    ${discrepanciesHtml}
+    <div class="meta-row"><i class="ti ti-cpu"></i>${p.modelProvider}/${p.modelName} · ${new Date(p.createdAt).toLocaleString()}</div>
+    <button class="btn reanalyse-btn" data-event="${fx.id}"><i class="ti ti-refresh"></i>Re-analyse</button>
+  `;
+  body.appendChild(wrap);
+
+  const toggle = wrap.querySelector(".reasoning-toggle");
+  if (toggle) {
+    let expanded = false;
+    const reasoningEl = wrap.querySelector(".reasoning");
+    toggle.addEventListener("click", () => {
+      expanded = !expanded;
+      reasoningEl.textContent = expanded ? p.reasoning : shortReasoning;
+      toggle.textContent = expanded ? "Show less" : "Show more";
+    });
+  }
+
+  // Re-analysing an already-analysed fixture creates a fresh Pick row
+  // (POST /api/picks/generate has no guard against an existing one — see
+  // picks.ts) rather than overwriting; GET /api/fixtures/top always shows
+  // only the most recent pick per fixture, so this just supersedes the
+  // one on screen while keeping the prior pick's outcome intact for the
+  // calibration/track-record math once it settles.
+  wrap.querySelector(".reanalyse-btn").addEventListener("click", async (ev) => {
+    const btn = ev.currentTarget;
+    btn.disabled = true;
+    btn.innerHTML = '<i class="ti ti-loader-2"></i>Re-analysing…';
+    const res = await fetch(API + "/picks/generate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ eventId: fx.id }),
+    });
+    if (res.ok) {
+      loadFixtures();
+    } else {
+      const err = await res.json();
+      btn.disabled = false;
+      btn.innerHTML = "Failed: " + (err.error || "unknown error");
+    }
+  });
+
+  return card;
+}
+
+// ---------- Market Manager ----------
+const MARKET_TYPES = ["h2h", "spreads", "totals"];
+const MARKET_TYPE_LABELS = { h2h: "Moneyline", spreads: "Spreads", totals: "Totals" };
+
+async function loadMarkets() {
+  const el = document.getElementById("panel-markets");
+  el.innerHTML = '<p class="empty">Loading leagues…</p>';
+  const sports = await fetch(API + "/sports").then(r => r.json());
+
+  const groups = {};
+  for (const s of sports) {
+    groups[s.group] = groups[s.group] || [];
+    groups[s.group].push(s);
+  }
+
+  el.innerHTML = "";
+  for (const [group, list] of Object.entries(groups)) {
+    const section = document.createElement("div");
+    section.className = "league-group";
+    section.innerHTML = `<h2 class="section-title">${group}</h2><div class="league-manager-grid"></div>`;
+    const grid = section.querySelector(".league-manager-grid");
+
+    for (const sport of list) {
+      const trackedByType = {};
+      for (const tm of sport.trackedMarkets) trackedByType[tm.marketType] = tm.enabled;
+
+      const card = document.createElement("div");
+      card.className = "league-card";
+      card.innerHTML = `<div class="league-card-title">${sport.title}</div>`;
+
+      for (const mt of MARKET_TYPES) {
+        const on = !!trackedByType[mt];
+        const row = document.createElement("div");
+        row.className = "market-row";
+        row.innerHTML = `
+          <span class="market-name">${MARKET_TYPE_LABELS[mt]}</span>
+          <button class="switch ${on ? "on" : ""}" data-sport="${sport.id}" data-market="${mt}"></button>
+        `;
+        card.appendChild(row);
+      }
+      grid.appendChild(card);
+    }
+    el.appendChild(section);
+  }
+
+  el.querySelectorAll(".switch").forEach(btn => {
+    btn.addEventListener("click", async () => {
+      const sportId = Number(btn.dataset.sport);
+      const marketType = btn.dataset.market;
+      const enabled = !btn.classList.contains("on");
+      btn.classList.toggle("on", enabled);
+      await fetch(API + "/markets", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sportId, marketType, enabled }),
+      });
+    });
+  });
+}
+
+// ---------- Track Record ----------
+function pct(x) { return x == null ? "—" : (x * 100).toFixed(1) + "%"; }
+function signedPct(x) { return x == null ? "—" : (x >= 0 ? "+" : "") + (x * 100).toFixed(1) + "pp"; }
+
+async function loadTrackRecord() {
+  const el = document.getElementById("panel-track-record");
+  el.innerHTML = '<p class="empty">Loading track record…</p>';
+  const [r, clv] = await Promise.all([
+    fetch(API + "/analysis/calibration").then(res => res.json()),
+    fetch(API + "/analysis/clv").then(res => res.json()),
+  ]);
+  const o = r.overall;
+
+  const rowsHtml = (items, labelKey, labelFn) => items.map(item => {
+    const label = labelFn ? labelFn(item) : item[labelKey];
+    const cls = item.reliable ? "" : "unreliable";
+    return `<tr class="${cls}">
+      <td>${label}${!item.reliable ? '<span class="reliable-badge">(n=' + item.count + ', not enough data)</span>' : ''}</td>
+      <td class="num">${item.count}</td>
+      <td class="num">${pct(item.hitRate)}</td>
+    </tr>`;
+  }).join("");
+
+  const bandRowsHtml = r.byConfidenceBand.map(b => {
+    const cls = b.reliable ? "" : "unreliable";
+    return `<tr class="${cls}">
+      <td>${b.band}${!b.reliable ? '<span class="reliable-badge">(n=' + b.count + ', not enough data)</span>' : ''}</td>
+      <td class="num">${b.count}</td>
+      <td class="num">${pct(b.hitRate)}</td>
+      <td class="num">${pct(b.avgStatedConfidence)}</td>
+      <td class="num">${signedPct(b.calibrationGap)}</td>
+    </tr>`;
+  }).join("");
+
+  el.innerHTML = `
+    ${!o.reliable ? `<div class="sample-warning"><i class="ti ti-alert-triangle"></i>Only ${o.wins + o.losses} graded picks so far (need ~${r.minReliableSample}+ for a statistically meaningful hit rate). Treat every number on this page as provisional, not a real track record yet.</div>` : ""}
+
+    <h2 class="section-title">Overall</h2>
+    <div class="metrics">
+      <div class="metric-card accent-blue">
+        <div class="label">Hit Rate</div>
+        <div class="value">${pct(o.hitRate)}</div>
+      </div>
+      <div class="metric-card">
+        <div class="label">Brier Score</div>
+        <div class="value">${o.brierScore == null ? "—" : o.brierScore.toFixed(3)}<span class="unit">lower is better</span></div>
+      </div>
+      <div class="metric-card accent-success">
+        <div class="label">Won / Lost / Push</div>
+        <div class="value" style="font-size:22px">${o.wins} / ${o.losses} / ${o.pushes}</div>
+      </div>
+      <div class="metric-card">
+        <div class="label">Unsettleable / Pending</div>
+        <div class="value" style="font-size:22px">${o.unsettleable} / ${o.unsettled}</div>
+      </div>
+    </div>
+
+    <h2 class="section-title">By Confidence Band <span style="text-transform:none;font-weight:500">— calibration gap = actual hit rate minus stated confidence; negative means overconfident</span></h2>
+    <table class="track-table">
+      <thead><tr><th>Band</th><th>N</th><th>Hit Rate</th><th>Avg. Stated Confidence</th><th>Calibration Gap</th></tr></thead>
+      <tbody>${bandRowsHtml || '<tr><td colspan="5" class="empty">No settled picks yet.</td></tr>'}</tbody>
+    </table>
+
+    <h2 class="section-title">By Market</h2>
+    <table class="track-table">
+      <thead><tr><th>Market</th><th>N</th><th>Hit Rate</th></tr></thead>
+      <tbody>${rowsHtml(r.byMarket) || '<tr><td colspan="3" class="empty">No settled picks yet.</td></tr>'}</tbody>
+    </table>
+
+    <h2 class="section-title">By League</h2>
+    <table class="track-table">
+      <thead><tr><th>League</th><th>N</th><th>Hit Rate</th></tr></thead>
+      <tbody>${rowsHtml(r.byLeague) || '<tr><td colspan="3" class="empty">No settled picks yet.</td></tr>'}</tbody>
+    </table>
+
+    ${clvSectionHtml(clv)}
+  `;
+}
+
+// Closing line value (added 2026-08-03) — see clv.ts. Deliberately leads
+// with the coverage disclaimer every time: CLV is only ever computable
+// for match_winner picks that had a live odds quote at both analysis time
+// and near kickoff, never the whole portfolio, and that must stay visible
+// however small the covered slice is.
+//
+// live/backfill kept as fully separate sections (added 2026-08-04) — see
+// Pick.clvCaptureSource's schema comment for why: backfill exists only to
+// prove the computation logic against historical data, and must never be
+// presented as if it were production capture performance.
+function clvSectionHtml(clv) {
+  const c = clv.coverage;
+  const coverageLine = `<div class="sample-warning"><i class="ti ti-info-circle"></i>
+    CLV coverage: ${c.coverableMarketPicks} of ${c.totalPicks} total picks are on a coverable market (match_winner only — every other market has no odds quote to compare against). ${c.oddsAtPickCaptured} had a live opening price captured; ${c.closingCaptured} also have a closing price (live + backfill combined — see below for the split).
+  </div>`;
+
+  const groupRows = (items) => items.map(g => `
+    <tr><td>${g.key}</td><td class="num">${g.count}</td><td class="num">${pct(g.positiveClvPct)}</td><td class="num">${signedPct(g.avgClvDelta)}</td></tr>
+  `).join("");
+
+  const sourceSection = (title, sourceReport, note) => {
+    if (!sourceReport.overall) {
+      return `<h3 style="margin-top:16px">${title}</h3><p class="empty">${note} — none captured yet.</p>`;
+    }
+    return `
+      <h3 style="margin-top:16px">${title}</h3>
+      <p style="font-size:12px;color:var(--text-muted);margin-bottom:8px">${note}</p>
+      <div class="metrics">
+        <div class="metric-card accent-blue">
+          <div class="label">Positive CLV</div>
+          <div class="value">${pct(sourceReport.overall.positiveClvPct)}</div>
+        </div>
+        <div class="metric-card">
+          <div class="label">Avg. CLV Delta</div>
+          <div class="value" style="font-size:22px">${signedPct(sourceReport.overall.avgClvDelta)}</div>
+        </div>
+        <div class="metric-card">
+          <div class="label">Picks</div>
+          <div class="value" style="font-size:22px">${sourceReport.overall.count}</div>
+        </div>
+      </div>
+      <table class="track-table">
+        <thead><tr><th>By Market</th><th>N</th><th>Positive CLV</th><th>Avg. Delta</th></tr></thead>
+        <tbody>${groupRows(sourceReport.byMarket) || '<tr><td colspan="4" class="empty">—</td></tr>'}</tbody>
+      </table>
+      <table class="track-table">
+        <thead><tr><th>By Model Provider</th><th>N</th><th>Positive CLV</th><th>Avg. Delta</th></tr></thead>
+        <tbody>${groupRows(sourceReport.byModelProvider) || '<tr><td colspan="4" class="empty">—</td></tr>'}</tbody>
+      </table>
+    `;
+  };
+
+  return `
+    <h2 class="section-title">Closing Line Value</h2>
+    ${coverageLine}
+    ${sourceSection("Live (production capture)", clv.live, "The real signal — captured automatically during actual pick generation.")}
+    ${sourceSection("Backfill (historical, not production)", clv.backfill, "Populated after the fact from historical odds data to verify the computation logic — not evidence of production performance.")}
+  `;
+}
+
+loadHealth();
+loadDataSourceWarning();
+loadFixtures();
+</script>
+</body>
+</html>
