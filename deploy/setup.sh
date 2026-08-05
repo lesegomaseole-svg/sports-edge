@@ -98,6 +98,22 @@ sudo -u "$APP_USER" npm run build
 export DATABASE_URL="file:$DATA_DIR/prod.db"
 sudo -u "$APP_USER" env DATABASE_URL="$DATABASE_URL" npx prisma migrate deploy
 
+# Seed the sport/league catalog — but ONLY on a genuinely empty DB, not on
+# every run. seed.ts upserts every Sport's `active` flag and every
+# TrackedMarket's `enabled` flag back to its hardcoded defaults each time
+# it runs (see its own comment on the else-branch) — fine on a fresh DB,
+# but running it unconditionally on every redeploy would silently overwrite
+# whatever you've since toggled by hand in the Market Manager UI. Migrations
+# alone don't populate this data, so skipping this step entirely (the
+# original bug) leaves Market Manager empty on first boot.
+SPORT_COUNT=$(sqlite3 "$DATA_DIR/prod.db" "SELECT COUNT(*) FROM Sport;" 2>/dev/null || echo 0)
+if [ "$SPORT_COUNT" = "0" ]; then
+  echo "Sport catalog is empty — seeding for the first time."
+  sudo -u "$APP_USER" env DATABASE_URL="$DATABASE_URL" npm run seed
+else
+  echo "Sport catalog already has $SPORT_COUNT entries — skipping seed (won't overwrite Market Manager toggles)."
+fi
+
 echo "=== 7/9: env file (secrets — placeholders only, won't overwrite) ==="
 if [ ! -f "$ENV_FILE" ]; then
   cat > "$ENV_FILE" << 'ENVEOF'
