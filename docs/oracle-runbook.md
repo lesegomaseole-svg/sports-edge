@@ -60,17 +60,47 @@ security list → Add Ingress Rules:
 (Port 22/SSH is normally open by default in the default security list —
 confirm it's there before you rely on it.)
 
-**b. The instance's own OS firewall** (SSH in first, see step 3):
+**b. The instance's own OS firewall — read this before just running `ufw
+allow`.** Oracle's stock Ubuntu images ship with a pre-populated `iptables`
+ruleset that runs independently of `ufw` — by default it explicitly
+`ACCEPT`s port 22 and rejects everything else, configured outside of ufw's
+control. `ufw allow 80/tcp` reporting success and `ufw status` showing it
+as allowed does **not** mean it's actually being enforced — confirmed
+during this app's own deployment: every other layer (security list, NSGs,
+DNS, the app itself listening correctly) checked out clean while 80/443
+stayed closed from outside, and this was the actual cause. Symptom to
+recognize: SSH (22) works externally, 80/443 don't, despite ufw agreeing
+they should.
+
+Check which ruleset is actually active first:
 ```
-sudo ufw allow 80/tcp
-sudo ufw allow 443/tcp
-sudo ufw allow 22/tcp
-sudo ufw enable   # if ufw isn't already active
+sudo iptables -L INPUT -n --line-numbers
 ```
-Some Oracle Ubuntu images pre-configure `iptables` directly instead of
-`ufw`. If the ufw rules don't seem to take effect, check
-`sudo iptables -L INPUT -n` and add equivalent `ACCEPT` rules for 80/443
-if you see a default-deny in place.
+Look for a `REJECT`/`DROP` rule with a lower line number (= higher
+precedence) than any 80/443 rule. If that command shows nothing useful,
+newer Ubuntu (22.04/24.04) may be running `iptables` as an nftables-compat
+shim — check the real legacy ruleset instead:
+```
+sudo iptables-legacy -L INPUT -n --line-numbers
+```
+
+Fix — insert ahead of the reject rule (appending after it gets ignored),
+using whichever of `iptables`/`iptables-legacy` showed the real ruleset
+above:
+```
+sudo iptables -I INPUT -m state --state NEW -p tcp --dport 80 -j ACCEPT
+sudo iptables -I INPUT -m state --state NEW -p tcp --dport 443 -j ACCEPT
+sudo netfilter-persistent save
+```
+If you needed `iptables-legacy` to see the real rules, use it here too,
+and persist with `sudo iptables-legacy-save | sudo tee
+/etc/iptables/rules.v4` instead of `netfilter-persistent save` — this
+persistence step matters as much as the rule itself; `ufw`'s own
+persistence doesn't cover this separate ruleset.
+
+Only bother with plain `ufw allow 22/80/443/tcp` / `ufw enable` if the
+check above shows ufw genuinely is the active enforcement layer (no
+competing iptables ruleset found) — don't run both blindly.
 
 ## 3. Sign up for a free DuckDNS subdomain
 
