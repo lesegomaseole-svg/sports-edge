@@ -135,7 +135,7 @@ export class ClaudeCodeAgent implements AgentProvider {
     const startedAt = Date.now();
     let stdout: string;
     try {
-      const result = await execFileAsync(
+      const pending = execFileAsync(
         CLAUDE_CODE_BIN,
         [
           "-p",
@@ -159,6 +159,18 @@ export class ClaudeCodeAgent implements AgentProvider {
           env: sanitizedEnv(),
         }
       );
+      // Explicitly close stdin (added 2026-08-06) — execFile's TS types
+      // don't expose a `stdio` option, but the promisified call still
+      // returns the underlying ChildProcess synchronously (`.child`), so
+      // this closes it directly instead. Without this, Node defaults the
+      // child's stdin to an open, never-written-to pipe — harmless when
+      // this runs interactively (every local test this session), but under
+      // systemd (no TTY, stdin not otherwise configured) the CLI sits
+      // waiting on it and eventually fails. Confirmed live on the deployed
+      // instance; the CLI's own warning names this exact fix ("redirect
+      // stdin explicitly: < /dev/null").
+      pending.child.stdin?.end();
+      const result = await pending;
       stdout = result.stdout;
     } catch (err) {
       throw translateSubprocessError(err);
@@ -209,7 +221,7 @@ function sanitizedEnv(): NodeJS.ProcessEnv {
 }
 
 function translateSubprocessError(err: unknown): Error {
-  const e = err as NodeJS.ErrnoException & { stderr?: string; killed?: boolean; signal?: string };
+  const e = err as NodeJS.ErrnoException & { stdout?: string; stderr?: string; killed?: boolean; signal?: string };
   if (e.code === "ENOENT") {
     return new Error(
       `Claude Code CLI not found on PATH — install with "npm install -g @anthropic-ai/claude-code" and run "claude" once to authenticate (subscription login, not an API key).`
@@ -218,5 +230,13 @@ function translateSubprocessError(err: unknown): Error {
   if (e.killed || e.signal === "SIGTERM") {
     return new Error(`Claude Code timed out after ${TIMEOUT_MS}ms.`);
   }
-  return new Error(`Claude Code subprocess failed: ${e.stderr?.trim() || e.message}`);
+  // stdout included (added 2026-08-06) — this was silently dropped before,
+  // which hid the real failure behind an unrelated-but-present stderr
+  // warning at least once in practice (a stdin-handling notice, harmless
+  // on its own, was the only thing this message showed while whatever
+  // actually caused the non-zero exit went unreported).
+  const stderr = e.stderr?.trim();
+  const stdout = e.stdout?.trim();
+  const detail = [stderr, stdout ? `stdout: ${stdout.slice(0, 500)}` : null].filter(Boolean).join(" | ") || e.message;
+  return new Error(`Claude Code subprocess failed: ${detail}`);
 }

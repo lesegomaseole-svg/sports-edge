@@ -60,6 +60,13 @@ export const ESPN_LEAGUE_BY_SPORT_KEY: Record<string, EspnLeagueRef> = {
   // during exactly the window this matters. Verified live: teams endpoint
   // 200 with 41 real teams, scoreboard showing real August fixtures.
   soccer_uefa_europa_league_qualifying: { sport: "soccer", league: "uefa.europa_qual" },
+  // Same reasoning, same day — UEFA Europa Conference League, main
+  // tournament and qualifying as separate ESPN competition codes just like
+  // Europa League above. Both verified live: uefa.europa.conf (main) 200
+  // with 36 real teams, uefa.europa.conf_qual 200 with 135 real teams and
+  // 27 real fixtures the same night uefa.europa_qual had 10.
+  soccer_uefa_conference_league: { sport: "soccer", league: "uefa.europa.conf" },
+  soccer_uefa_conference_league_qualifying: { sport: "soccer", league: "uefa.europa.conf_qual" },
 };
 
 export const ESPN_BASE = "https://site.api.espn.com/apis/site/v2/sports";

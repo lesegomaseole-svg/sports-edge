@@ -42,6 +42,10 @@ const SPORTS: { key: string; group: string; title: string; active: boolean }[] =
   // have very different data quality (far more obscure teams in
   // qualifying) worth toggling independently. See espnLeagueMap.ts.
   { key: "soccer_uefa_europa_league_qualifying", group: "Soccer", title: "Europa League Qualifying", active: true },
+  // Same split as Europa League above — main tournament and qualifying
+  // are separate ESPN competition codes. See espnLeagueMap.ts.
+  { key: "soccer_uefa_conference_league", group: "Soccer", title: "Europa Conference League", active: true },
+  { key: "soccer_uefa_conference_league_qualifying", group: "Soccer", title: "Conference League Qualifying", active: true },
   // --- Basketball --- (out of scope for now — see analyzeEvent.ts)
   { key: "basketball_nba", group: "Basketball", title: "NBA", active: false },
   { key: "basketball_euroleague", group: "Basketball", title: "EuroLeague", active: false },
