@@ -53,6 +53,13 @@ export const ESPN_LEAGUE_BY_SPORT_KEY: Record<string, EspnLeagueRef> = {
   soccer_japan_j_league: { sport: "soccer", league: "jpn.1" },
   // Verified live 2026-08-01 (teams endpoint 200, 16 real teams).
   soccer_norway_eliteserien: { sport: "soccer", league: "nor.1" },
+  // Added 2026-08-06 — ESPN tracks qualifying rounds under a SEPARATE
+  // competition code from the main tournament (`uefa.europa`, above);
+  // discovered because those rounds run July-August, well before the
+  // September group stage, so `uefa.europa` genuinely shows zero fixtures
+  // during exactly the window this matters. Verified live: teams endpoint
+  // 200 with 41 real teams, scoreboard showing real August fixtures.
+  soccer_uefa_europa_league_qualifying: { sport: "soccer", league: "uefa.europa_qual" },
 };
 
 export const ESPN_BASE = "https://site.api.espn.com/apis/site/v2/sports";

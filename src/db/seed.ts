@@ -37,6 +37,11 @@ const SPORTS: { key: string; group: string; title: string; active: boolean }[] =
   { key: "soccer_mexico_ligamx", group: "Soccer", title: "Liga MX", active: true },
   { key: "soccer_japan_j_league", group: "Soccer", title: "J1 League", active: true },
   { key: "soccer_norway_eliteserien", group: "Soccer", title: "Eliteserien", active: true }, // added + verified 2026-08-01
+  // Separate from Europa League proper (soccer_uefa_europa_league) —
+  // ESPN tracks qualifying under its own competition code, and the two
+  // have very different data quality (far more obscure teams in
+  // qualifying) worth toggling independently. See espnLeagueMap.ts.
+  { key: "soccer_uefa_europa_league_qualifying", group: "Soccer", title: "Europa League Qualifying", active: true },
   // --- Basketball --- (out of scope for now — see analyzeEvent.ts)
   { key: "basketball_nba", group: "Basketball", title: "NBA", active: false },
   { key: "basketball_euroleague", group: "Basketball", title: "EuroLeague", active: false },
