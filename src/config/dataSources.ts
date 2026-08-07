@@ -150,7 +150,7 @@ export const DATA_SOURCES: DataSourceConfig[] = [
     id: "api-football",
     category: "stats",
     type: "api",
-    enabled: true,
+    enabled: false, // disabled 2026-08-07 — free plan permanently capped to a stale 2024/25 season, never current form; low real value against 100/day quota. See ApiFootballStatsProvider.ts, kept for possible future plan upgrade.
     usedForIngestionScoring: false,
     description:
       "Team form + standings from api-football.com (v3) — FALLBACK ONLY, used exclusively for leagues football-data.org doesn't cover (see analyzeEvent.ts's priority logic); skipped entirely wherever football-data has data, since this source's free plan is capped at a stale season (2024/25, not current form — flagged explicitly in the prompt when used). Verified live 2026-07-31, re-checked 2026-08-01: Free plan, 100 requests/day + 10/minute — very tight, hence prompt-time only, with in-process per-league standings caching. All 21 tracked leagues ARE in API-Football's catalogue. See src/providers/stats/ApiFootballStatsProvider.ts.",
@@ -159,7 +159,7 @@ export const DATA_SOURCES: DataSourceConfig[] = [
     id: "sportmonks",
     category: "stats",
     type: "api",
-    enabled: true,
+    enabled: false, // disabled 2026-08-07 — free plan only entitles 2 of this app's 24 tracked leagues (Danish Superliga, Scottish Premiership); near-zero marginal value, kept purely as noise in DataSourceHealth's disabled-source warning otherwise. See SportMonksStatsProvider.ts, kept for possible future plan upgrade.
     usedForIngestionScoring: false,
     description:
       "Team form from sportmonks.com (Football v3). Verified live 2026-07-31, re-checked 2026-08-01: auth works (Football Free Plan active, 3000 req/hour), but the free plan's league entitlement covers only Danish Superliga + Scottish Premiership (and some cricket) — of this app's 21 tracked leagues, that's exactly 2: soccer_denmark_superliga and soccer_spl (added 2026-08-01), verified end-to-end with real fixture data. Every other tracked league still returns nothing on this plan — expected, not a bug. See src/providers/stats/SportMonksStatsProvider.ts.",
@@ -168,10 +168,28 @@ export const DATA_SOURCES: DataSourceConfig[] = [
     id: "sofascore",
     category: "stats",
     type: "api",
-    enabled: true,
+    enabled: false, // disabled 2026-08-07 — 200 requests/~31 days no longer survives more than a few days against this app's actual pick volume (24 leagues now, vs far fewer when this budget was set); realized value is xG on a handful of picks per cycle then quota-exhausted silence for weeks, not the "sole xG source" it sounds like on paper. Kept for possible future plan upgrade or if D5's reserve-the-budget proposal ever gets built.
     usedForIngestionScoring: false,
     description:
       "Rich match statistics (xG, big chances, shots inside/outside box, possession, tackles, duels, corners, cards, and more) from SofaScore via RapidAPI (host: sofascore-sport-api.p.rapidapi.com). Verified live 2026-08-01: NOT a duplicate of espn-match-stats — has everything ESPN's box score has plus expected goals and much deeper attacking/defensive detail. THE BINDING CONSTRAINT: this key's plan allows exactly 200 requests per ~31-day cycle (confirmed via response headers, not RapidAPI's much larger platform-wide free-tier number) — far tighter than any other source here, so this uses aggressive in-process caching (permanent team-id cache, 24h stats-summary cache) and only pulls the single most recent match, not a multi-match average. Prompt-time only. See src/providers/stats/SofaScoreRapidApiProvider.ts.",
+  },
+  {
+    id: "football-data-co-uk",
+    category: "stats",
+    type: "api",
+    enabled: true,
+    usedForIngestionScoring: false,
+    description:
+      "Match results from football-data.co.uk — genuinely open CSV data, no key, no auth, robots.txt confirmed fully permissive (checked live 2026-08-07, unlike fotmob.com/understat.com which explicitly disallow this and whoscored.com which bot-blocks despite a permissive robots.txt). Two depths: RICH (corners/cards/fouls/shots/referee) for 11 traditional European leagues, THIN (goals/result only) for 6 more (Argentina, MLS, Liga MX, Brazil, Denmark, Norway) — no continental competitions, no Saudi Arabia, Japan excluded for being months stale. See LEAGUE_MAP in src/providers/stats/FootballDataCoUkProvider.ts for the exact verified mapping.",
+  },
+  {
+    id: "american-soccer-analysis",
+    category: "stats",
+    type: "api",
+    enabled: true,
+    usedForIngestionScoring: false,
+    description:
+      "Per-match xG (expected goals) for MLS only from americansocceranalysis.com — free, no key, real JSON API. Replaces sofascore as this app's xG source for the one league it covers; the other 23 tracked leagues still have no xG source (checked live 2026-08-07: Understat/FBref/WhoScored/FotMob/footystats.org/xGscore.io all ruled out by explicit robots.txt disallow or bot-detection; playerstats.football ruled out separately for an explicit ToS prohibition on scraping despite permissive robots.txt). See src/providers/stats/AmericanSoccerAnalysisProvider.ts.",
   },
 
   // --- Sentiment ---

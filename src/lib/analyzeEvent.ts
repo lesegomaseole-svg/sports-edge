@@ -554,17 +554,21 @@ async function buildStatsBlock(homeTeam: string, awayTeam: string, sportKey: str
   const usable = sections.filter((s): s is string => !!s);
   const combined = usable.length > 0 ? usable.join("\n\n") : "No corners/cards/form data available.";
 
-  // xG availability check (added 2026-08-01): the ONLY source in this app
-  // that ever supplies expected goals is SofaScoreRapidApiProvider (its
-  // "X.XX xG" summary fragment — verified live, ESPN's box score has no
-  // xG field at all, and fbref.com — the originally-spec'd xG source —
-  // is Cloudflare-blocked, see EspnMatchStatsProvider's file header).
-  // SofaScore's own 200-requests/month quota and per-team resolution
-  // aren't guaranteed to succeed for a given matchup, so rather than
-  // silently having no xG whenever that happens, say so explicitly — the
-  // analytical method step 1 (form vs underlying performance) needs xG
-  // specifically and should report the gap, not skip that reasoning step
-  // quietly or infer a number that isn't there.
+  // xG availability check (added 2026-08-01, updated 2026-08-07): the
+  // ONLY source in this app that ever supplies expected goals is now
+  // AmericanSoccerAnalysisProvider — free, no quota, but MLS only (its
+  // "xG X.XX-Y.YY" summary fragment; ESPN's box score has no xG field at
+  // all, and fbref.com/Understat, the two usual free xG sources, are
+  // blocked — see AmericanSoccerAnalysisProvider.ts's header for the full
+  // search). SofaScoreRapidApiProvider (previously the sole xG source,
+  // 200-requests/month quota) was disabled 2026-08-07 for realistically
+  // never surviving this app's actual pick volume. This means xG is now
+  // structurally unavailable for 23 of this app's 24 tracked leagues, not
+  // just occasionally missing — the explicit gap-reporting below matters
+  // more now than when this was written, not less: the analytical method
+  // step 1 (form vs underlying performance) needs xG specifically and
+  // should report the gap, not skip that reasoning step quietly or infer
+  // a number that isn't there.
   const hasXg = /\bxG\b/.test(combined);
   return hasXg ? combined : `${combined}\n\nxG unavailable for this league/matchup — no source returned expected-goals data for either team this analysis. Do not infer over/underperformance vs underlying numbers without it; report this as a data gap instead.`;
 }

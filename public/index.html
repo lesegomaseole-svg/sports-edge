@@ -172,6 +172,13 @@
   .conf-badge.mid { background: var(--warning-soft); color: var(--warning); }
   .conf-badge.low { background: rgba(148,163,184,.12); color: var(--text-muted); }
 
+  .band-note { font-size: 11px; color: var(--text-muted); margin-top: 4px; }
+  .correlated-tag {
+    font-size: 11px; font-weight: 600; padding: 4px 10px; border-radius: 999px;
+    background: var(--warning-soft); color: var(--warning);
+    display: inline-flex; align-items: center; gap: 4px;
+  }
+
   .recommendation { font-size: 15px; font-weight: 650; margin: 6px 0 6px; letter-spacing: -0.005em; }
   .reasoning { font-size: 13px; color: var(--text-secondary); line-height: 1.55; }
   .reasoning-toggle {
@@ -406,10 +413,52 @@ function marketMeta(marketType) {
 }
 
 // ---------- Fixtures ----------
+// Confidence bands must match calibration.ts's CONFIDENCE_BANDS exactly —
+// this is display-only, the actual banding/reliability math stays
+// server-side (computeCalibrationReport), this just looks up which band a
+// given pick's stated confidence falls into.
+const CONFIDENCE_BAND_RANGES = [
+  { label: "0.4-0.5", min: 0.4, max: 0.5 },
+  { label: "0.5-0.6", min: 0.5, max: 0.6 },
+  { label: "0.6-0.7", min: 0.6, max: 0.7 },
+  { label: "0.7-0.8", min: 0.7, max: 0.8 },
+  { label: "0.8+", min: 0.8, max: Infinity },
+];
+
+function findBandStats(confidence, calibration) {
+  if (!calibration || !calibration.byConfidenceBand) return null;
+  const range = CONFIDENCE_BAND_RANGES.find(r => confidence >= r.min && confidence < r.max);
+  if (!range) return null;
+  const stats = calibration.byConfidenceBand.find(b => b.band === range.label);
+  // Only surface this if the band itself is individually reliable — same
+  // "don't show a number that isn't statistically meaningful yet" rule
+  // the backend already applies to its own prompt feedback.
+  return stats && stats.reliable ? stats : null;
+}
+
+// Fixtures sharing a league + calendar date aren't independent outcomes —
+// same referee pool, same weather system, same league-wide narrative can
+// move several of them together. This is a display-only grouping (no new
+// data), same "same-day, same-league" caution already given verbally
+// earlier — surfaced here so it doesn't rely on remembering to ask.
+function buildCorrelationGroups(fixtures) {
+  const groups = new Map();
+  for (const fx of fixtures) {
+    if (fx.unanalyzed) continue;
+    const dateKey = fx.commenceTime.slice(0, 10); // YYYY-MM-DD, UTC
+    const key = fx.sport.title + "|" + dateKey;
+    groups.set(key, (groups.get(key) || 0) + 1);
+  }
+  return groups;
+}
+
 async function loadFixtures() {
   const el = document.getElementById("panel-fixtures");
   el.innerHTML = '<p class="empty">Loading fixtures…</p>';
-  const fixtures = await fetch(API + "/fixtures/top").then(r => r.json());
+  const [fixtures, calibration] = await Promise.all([
+    fetch(API + "/fixtures/top").then(r => r.json()),
+    fetch(API + "/analysis/calibration").then(r => r.json()).catch(() => null),
+  ]);
 
   if (fixtures.length === 0) {
     el.innerHTML = '<p class="empty">No fixtures currently clear the data-sufficiency bar. Enable some leagues in Market Manager and wait for the next ingestion cycle.</p>';
@@ -419,6 +468,7 @@ async function loadFixtures() {
   const analysed = fixtures.filter(f => !f.unanalyzed);
   const highConf = analysed.filter(f => f.pick.confidence >= 0.66);
   const leagues = new Set(fixtures.map(f => f.sport.title));
+  const correlationGroups = buildCorrelationGroups(fixtures);
 
   el.innerHTML = `
     <div class="metrics">
@@ -440,10 +490,10 @@ async function loadFixtures() {
   `;
 
   const grid = el.querySelector(".fixture-grid");
-  for (const fx of fixtures) grid.appendChild(renderFixtureCard(fx));
+  for (const fx of fixtures) grid.appendChild(renderFixtureCard(fx, calibration, correlationGroups));
 }
 
-function renderFixtureCard(fx) {
+function renderFixtureCard(fx, calibration, correlationGroups) {
   const card = document.createElement("div");
   card.className = "fixture-card" + (fx.unanalyzed ? " unanalyzed" : "");
 
@@ -480,18 +530,59 @@ function renderFixtureCard(fx) {
     wrap.querySelector("button").addEventListener("click", async (ev) => {
       const btn = ev.currentTarget;
       btn.disabled = true;
-      btn.innerHTML = '<i class="ti ti-loader-2"></i>Analysing…';
-      const res = await fetch(API + "/picks/generate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ eventId: fx.id }),
-      });
-      if (res.ok) {
-        loadFixtures();
-      } else {
-        const err = await res.json();
+      // Real analyses routinely take 1-7 minutes (web search + a claude CLI
+      // subprocess call) — a plain "Analysing…" gives no sense of whether
+      // it's still working or actually stuck, which is exactly what led to
+      // manually refreshing out of uncertainty. Ticking elapsed time is a
+      // cheap, honest signal that nothing died.
+      const startedAt = Date.now();
+      const tick = () => {
+        const secs = Math.floor((Date.now() - startedAt) / 1000);
+        btn.innerHTML = `<i class="ti ti-loader-2"></i>Analysing… (${secs}s)`;
+      };
+      tick();
+      const interval = setInterval(tick, 1000);
+
+      // Previously: a failure response was assumed to always be valid JSON
+      // (`await res.json()`), and any network-level failure (dropped
+      // connection, a non-JSON error page from something in front of the
+      // app) threw uncaught here — silently leaving the button stuck on
+      // "Analysing…" forever, with no error shown and no retry, even
+      // though the pick may well have finished and saved successfully on
+      // the server; the client just never found out. Catching everything
+      // and always re-checking via loadFixtures() closes that gap: a
+      // pick that actually landed now shows up either way, and a genuine
+      // failure gets a visible, retryable error instead of a frozen button.
+      try {
+        const res = await fetch(API + "/picks/generate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ eventId: fx.id }),
+        });
+        if (res.ok) {
+          clearInterval(interval);
+          loadFixtures();
+          return;
+        }
+        let message = `HTTP ${res.status}`;
+        try {
+          const err = await res.json();
+          message = err.error || message;
+        } catch {
+          // Response wasn't JSON (e.g. an error page from something in
+          // front of the app) — the generic HTTP-status message above is
+          // still shown, not a silent crash.
+        }
+        clearInterval(interval);
         btn.disabled = false;
-        btn.innerHTML = "Failed: " + (err.error || "unknown error");
+        btn.innerHTML = "Failed: " + message + " (click to retry)";
+      } catch (networkErr) {
+        clearInterval(interval);
+        // The request itself failed client-side (dropped connection,
+        // browser tab was backgrounded/suspended, etc.) — this does NOT
+        // mean the analysis failed server-side, so check for a real
+        // result before assuming it didn't happen.
+        await loadFixtures();
       }
     });
     return card;
@@ -501,6 +592,16 @@ function renderFixtureCard(fx) {
   const meta = marketMeta(p.market);
   const tier = confidenceTier(p.confidence);
   const shortReasoning = p.reasoning.length > 160 ? p.reasoning.slice(0, 160) + "…" : p.reasoning;
+
+  const bandStats = findBandStats(p.confidence, calibration);
+  const bandNoteHtml = bandStats
+    ? `<div class="band-note"><i class="ti ti-chart-histogram"></i>${bandStats.band} confidence band has hit ${Math.round(bandStats.hitRate * 100)}% historically (n=${bandStats.count}) — trust this number, not just the ${Math.round(p.confidence * 100)}% stated above</div>`
+    : "";
+  const correlationKey = fx.sport.title + "|" + fx.commenceTime.slice(0, 10);
+  const correlationCount = correlationGroups ? (correlationGroups.get(correlationKey) || 0) : 0;
+  const correlatedTagHtml = correlationCount > 1
+    ? `<span class="correlated-tag" title="${correlationCount} analysed picks in ${fx.sport.title} today — treat as correlated, not independent coverage, if combining picks"><i class="ti ti-link"></i>${correlationCount} correlated today</span>`
+    : "";
 
   // No provider-name gate needed — ClaudeCodeAgent is the only agent
   // provider (2026-08-02) and always sets searchesUsed. Shown whenever
@@ -569,7 +670,9 @@ function renderFixtureCard(fx) {
       <span class="conf-badge ${tier}">${Math.round(p.confidence * 100)}% confidence</span>
       ${searchBadge}
       ${outcomeBadge}
+      ${correlatedTagHtml}
     </div>
+    ${bandNoteHtml}
     ${degradedNote}
     <div class="recommendation">${p.recommendation}</div>
     ${keyFactorsHtml}

@@ -4,6 +4,8 @@ import { ApiFootballStatsProvider } from "./ApiFootballStatsProvider";
 import { SportMonksStatsProvider } from "./SportMonksStatsProvider";
 import { FootballDataStatsProvider } from "./FootballDataStatsProvider";
 import { SofaScoreRapidApiProvider } from "./SofaScoreRapidApiProvider";
+import { FootballDataCoUkProvider } from "./FootballDataCoUkProvider";
+import { AmericanSoccerAnalysisProvider } from "./AmericanSoccerAnalysisProvider";
 import { DATA_SOURCES } from "../../config/dataSources";
 
 function instantiate(sourceId: string): StatsProvider | null {
@@ -42,6 +44,10 @@ function instantiate(sourceId: string): StatsProvider | null {
       }
       return new SofaScoreRapidApiProvider(apiKey);
     }
+    case "football-data-co-uk":
+      return new FootballDataCoUkProvider(); // no key required
+    case "american-soccer-analysis":
+      return new AmericanSoccerAnalysisProvider(); // no key required
     default:
       console.warn(`[stats] unknown enabled data source id "${sourceId}" — no provider wired for it.`);
       return null;
