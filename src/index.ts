@@ -16,7 +16,7 @@ app.listen(PORT, () => {
   const enabledNewsIds = DATA_SOURCES.filter((s) => s.category === "news" && s.enabled).map((s) => s.id);
 
   console.log(`Sports Edge running at http://localhost:${PORT}`);
-  console.log(`  Fixtures:       espn-fixtures (no key required), soccer-only, 21 leagues, bounded to today's fixtures only`);
+  console.log(`  Fixtures:       espn-fixtures (no key required), soccer-only, 24 leagues, bounded to today's fixtures only`);
   console.log(`  Odds:           ${getOddsProvider()?.name ?? "disabled"} — used for CLV tracking (src/lib/clv.ts) and as a results fallback only; the analysis prompt gets market pricing from search now, fixtures don't depend on this at all`);
   console.log(`  News sources:   ${enabledNewsIds.join(", ") || "none enabled"} (actual usability logged per-source below)`);
   console.log(`  Agent provider: claude-code (subscription-billed via the \`claude\` CLI — see src/agents/ClaudeCodeAgent.ts)`);
@@ -54,8 +54,19 @@ function warnIfAuthUnset() {
 // fixtureIngestion.ts's fixturesSucceeded), just makes "is anything
 // currently disabled" impossible to miss instead of something you have to
 // think to go look up.
+//
+// Filtered to CURRENT DATA_SOURCES ids (added 2026-08-08): DataSourceHealth
+// is its own table, keyed by sourceId string, with no foreign key back to
+// DATA_SOURCES — removing a provider from config (as api-football and
+// sofascore both were) leaves its old row sitting there forever, disabled
+// forever, since nothing ever calls recordAttempt() for an id no code
+// references anymore. Without this filter every future provider removal
+// would print a stale, un-actionable warning at every single boot.
 async function warnIfSourcesDisabled() {
-  const disabled = await prisma.dataSourceHealth.findMany({ where: { disabled: true } });
+  const currentIds = new Set(DATA_SOURCES.map((s) => s.id));
+  const disabled = (await prisma.dataSourceHealth.findMany({ where: { disabled: true } })).filter((s) =>
+    currentIds.has(s.sourceId)
+  );
   if (disabled.length === 0) return;
   console.warn(`[startup] ${disabled.length} data source(s) currently DISABLED — see GET /api/data-sources/health:`);
   for (const s of disabled) {
