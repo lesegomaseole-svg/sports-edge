@@ -16,21 +16,38 @@ export const fixturesRouter = Router();
 // relied on as an invariant) so this stays correct even against rows that
 // predate that field existing, e.g. from before this migration.
 //
-// No take/limit (removed 2026-08-01 — was hard-capped at 15, a leftover
-// from when this app tracked far fewer leagues; with 21 tracked as of
-// this writing, that cap was silently squeezing out whole leagues, e.g.
-// Eliteserien's fixtures never made a top-15 list dominated by
-// earlier-kickoff fixtures from other leagues at the same dataScore).
-// Each fixture includes its most recent Pick if one exists, or is
-// flagged unanalyzed.
+// TAKE_LIMIT (re-added 2026-08-08, reversing the 2026-08-01 removal): that
+// removal's reasoning — a flat cap squeezing out whole leagues once 21+
+// were tracked — still applies in principle, but explicitly requested
+// anyway: with dataScore desc as the primary sort, a cap here just means
+// "show the 10 best-data fixtures first," not an arbitrary leaguewide
+// cutoff. hasSufficientData: true is still the real data-quality filter
+// (every fixture below the bar was never persisted at all — see
+// fixtureIngestion.ts) — this cap only trims an already-qualified list
+// down to a manageable dashboard size.
+//
+// RICH_DATA_SCORE (added 2026-08-08): hasSufficientData only guarantees
+// dataScore >= MIN_DATA_SCORE (1 of 2 possible points — see
+// fixtureIngestion.ts) — a fixture can clear that bar on EITHER corners/
+// cards data OR any sport-wide news existing, not necessarily both. That's
+// a deliberately low bar for what gets persisted at all, but too low for
+// what the dashboard should hand the model to analyse — a fixture with
+// only sport-wide news and no team-specific stats is a much weaker
+// analysis candidate than one with both. Restricting to the max score (2)
+// here means only fixtures with corners/cards data AND news qualify for
+// the dashboard's top list, even though weaker ones still exist in the DB.
+const TAKE_LIMIT = 10;
+const RICH_DATA_SCORE = 2;
+
 fixturesRouter.get("/top", async (_req, res) => {
   const events = await prisma.event.findMany({
-    where: { completed: false, hasSufficientData: true },
+    where: { completed: false, hasSufficientData: true, dataScore: { gte: RICH_DATA_SCORE } },
     include: {
       sport: true,
       picks: { orderBy: { createdAt: "desc" }, take: 1 },
     },
     orderBy: [{ dataScore: "desc" }, { commenceTime: "asc" }],
+    take: TAKE_LIMIT,
   });
 
   const result = events.map((e) => {
