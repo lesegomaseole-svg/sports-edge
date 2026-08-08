@@ -1,7 +1,6 @@
 /**
  * Team form/standings from https://www.sportmonks.com (Football v3 API).
- * Intended to run alongside EspnMatchStatsProvider, ApiFootballStatsProvider,
- * and FootballDataStatsProvider.
+ * Intended to run alongside EspnMatchStatsProvider and FootballDataStatsProvider.
  *
  * ⚠️ CONFIRMED LIVE 2026-07-31, WITH REAL AUTH: this app's free-plan
  * SportMonks account has usable coverage of exactly 4 football leagues —
@@ -26,19 +25,24 @@
  * not just headers): 3000 requests, resetting every 3600s — i.e.
  * 3000/hour.
  *
- * No static per-sportKey coverage map exists for this provider (unlike
- * ApiFootballStatsProvider/FootballDataStatsProvider) because coverage
- * here is a whole-account subscription entitlement, not something
- * knowable from a sportKey alone — every call is a genuine attempt, and
- * DataSourceHealth's normal 3-strikes tracking is what actually reflects
- * this provider's real-world reliability (see StatsProvider.supportsSport's
- * doc comment for why this provider intentionally omits it).
+ * supportsSport ADDED 2026-08-07 (reversing the original 2026-08-01
+ * decision to omit it): the reasoning then was that coverage is a
+ * whole-account subscription entitlement, not knowable from a sportKey
+ * alone, so DataSourceHealth's normal 3-strikes tracking should be what
+ * reflects this provider's reliability instead. In practice that meant
+ * being attempted against all 22 leagues it doesn't cover, and being
+ * disabled by the standard false-failure pattern for it — not because
+ * anything broke, but because "no data for this plan" and "the source is
+ * down" look identical to the generic 3-strikes counter. The entitlement
+ * itself has been stable since 2026-08-01 with no indication it changes
+ * without a plan change, so hardcoding the 2 known-covered leagues below
+ * is safe now and removes that noise entirely, at the cost of needing a
+ * manual update if the plan's coverage ever actually changes.
  *
  * Head-to-head: not implemented, same reason as the other two new stats
  * providers — StatsProvider.fetchTeamStats takes one team, no opponent.
  * Not wired into oddsIngestion.ts sufficiency scoring — prompt-time only
- * (analyzeEvent.ts), consistent with ApiFootballStatsProvider/
- * FootballDataStatsProvider.
+ * (analyzeEvent.ts), consistent with FootballDataStatsProvider.
  */
 import axios from "axios";
 import { StatsProvider, StatsSnapshot } from "./StatsProvider";
@@ -71,8 +75,18 @@ interface TeamDetailResponse {
   data: { id: number; name: string; latest?: Fixture[] };
 }
 
+// The only 2 of this app's 24 tracked leagues this account's free plan
+// actually covers — confirmed live 2026-08-01 (GET /football/leagues,
+// GET /football/my/leagues, and a real team-name search), re-affirmed
+// 2026-08-07. See the file header for why this exists now.
+const SUPPORTED_SPORT_KEYS = new Set(["soccer_denmark_superliga", "soccer_spl"]);
+
 export class SportMonksStatsProvider implements StatsProvider {
   readonly name = "sportmonks";
+
+  supportsSport(sportKey: string): boolean {
+    return SUPPORTED_SPORT_KEYS.has(sportKey);
+  }
 
   constructor(private readonly apiToken: string) {
     if (!apiToken) {

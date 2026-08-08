@@ -16,7 +16,7 @@ export interface StatsProvider {
   fetchTeamStats(teamName: string, sportKey: string): Promise<StatsSnapshot | null>;
   /**
    * Optional: for providers with a STATIC, known-in-advance per-sportKey
-   * coverage map (e.g. ApiFootballStatsProvider, FootballDataStatsProvider),
+   * coverage map (e.g. FootballDataStatsProvider, SportMonksStatsProvider),
    * lets callers skip a sportKey they already know isn't covered — without
    * this, "not covered" and "covered but this call returned nothing" both
    * come back as fetchTeamStats() -> null, which is indistinguishable, and

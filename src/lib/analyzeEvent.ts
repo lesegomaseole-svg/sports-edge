@@ -34,9 +34,10 @@
  * (below). Fetched in this order in code (prompt order differs, see the
  * function itself):
  *   1. Stats — every enabled StatsProvider (corners/cards from
- *      EspnMatchStatsProvider and SofaScoreRapidApiProvider, team
- *      form/standings from ApiFootballStatsProvider/SportMonksStatsProvider/
- *      FootballDataStatsProvider), for both teams.
+ *      EspnMatchStatsProvider and, for 11 European leagues, also
+ *      FootballDataCoUkProvider; xG from AmericanSoccerAnalysisProvider,
+ *      MLS only; team form/standings from FootballDataStatsProvider and,
+ *      for its 2 covered leagues, SportMonksStatsProvider), for both teams.
  *   2. Weather — kickoff-time forecast for the home team's venue city
  *      (OpenWeatherMapProvider), called out as relevant to goals/corners.
  *   3. Recent news for the sport.
@@ -102,17 +103,6 @@ import { computeCalibrationReport } from "./calibration";
 
 const statsProviders = getEnabledStatsProviders();
 const weatherProvider = getEnabledWeatherProvider();
-
-// Priority: football-data.org's form/standings data is genuinely current;
-// API-Football's free plan is capped at a stale season (see
-// ApiFootballStatsProvider's file header). Wherever football-data covers
-// a league, api-football is skipped entirely for it rather than merged in
-// alongside — see buildStatsBlock. Identified by name rather than a
-// tighter type, since StatsProvider itself doesn't distinguish "form"
-// sources from "corners/cards" ones (espn-match-stats) or narrow-coverage
-// ones (sportmonks), which aren't part of this priority rule at all.
-const FOOTBALL_DATA_PROVIDER = statsProviders.find((p) => p.name === "football-data");
-const API_FOOTBALL_PROVIDER = statsProviders.find((p) => p.name === "api-football");
 
 const NONE_MARKET = "none";
 
@@ -503,18 +493,10 @@ async function buildNewsBlock(sportKey: string, homeTeam: string, awayTeam: stri
 }
 
 async function buildStatsBlock(homeTeam: string, awayTeam: string, sportKey: string): Promise<string> {
-  // Priority: skip api-football entirely when football-data.org covers
-  // this league — its data is current, api-football's is a stale season.
-  // api-football is only actually called as a fallback for leagues
-  // football-data doesn't cover at all.
-  const footballDataCoversThis = FOOTBALL_DATA_PROVIDER?.supportsSport?.(sportKey) ?? false;
-
   const sections = await Promise.all(
     statsProviders.map(async (provider) => {
-      if (provider === API_FOOTBALL_PROVIDER && footballDataCoversThis) return null;
-
       // A provider with a STATIC per-sportKey coverage map (e.g.
-      // ApiFootballStatsProvider, FootballDataStatsProvider) that doesn't
+      // FootballDataStatsProvider, now also SportMonksStatsProvider) that doesn't
       // cover this sportKey at all is a known, permanent non-match — not
       // a failure worth counting toward its 3-strikes health tracking
       // (that miscount is exactly what disabled football-data after a
@@ -531,44 +513,37 @@ async function buildStatsBlock(homeTeam: string, awayTeam: string, sportKey: str
       ]);
       const lines = [home.line, away.line].filter((s): s is string => !!s);
       // quota_exhausted (added 2026-08-04): a provider's own request quota
-      // hitting zero (SofaScore: 200/~31 days, the app's sole xG source)
-      // is a fundamentally different situation from a genuine outage — see
-      // dataSourceHealth.ts's recordAttempt comment. Either call erroring
-      // with a quota signature is enough to tag the reason, even if the
-      // other happened to succeed first.
+      // hitting zero is a fundamentally different situation from a genuine
+      // outage — see dataSourceHealth.ts's recordAttempt comment. Either
+      // call erroring with a quota signature is enough to tag the reason,
+      // even if the other happened to succeed first.
       const quotaExhausted = home.quotaExhausted || away.quotaExhausted;
       await recordAttempt(provider.name, lines.length > 0, quotaExhausted ? "quota_exhausted" : undefined);
       if (lines.length === 0) return null;
 
-      // Structural flag on top of api-football's own in-summary staleness
-      // note (belt-and-braces — the model gets the caveat twice, once
-      // here in the block header and once in the data itself).
-      const header =
-        provider === API_FOOTBALL_PROVIDER
-          ? `${provider.name} stats [BACKGROUND CONTEXT ONLY — prior season, NOT current form; weight accordingly, only used because football-data.org has no coverage of this league]:`
-          : `${provider.name} stats:`;
-      return `${header}\n${lines.join("\n")}`;
+      return `${provider.name} stats:\n${lines.join("\n")}`;
     })
   );
 
   const usable = sections.filter((s): s is string => !!s);
   const combined = usable.length > 0 ? usable.join("\n\n") : "No corners/cards/form data available.";
 
-  // xG availability check (added 2026-08-01, updated 2026-08-07): the
-  // ONLY source in this app that ever supplies expected goals is now
+  // xG availability check (added 2026-08-01, updated 2026-08-08): the
+  // ONLY source in this app that ever supplies expected goals is
   // AmericanSoccerAnalysisProvider — free, no quota, but MLS only (its
   // "xG X.XX-Y.YY" summary fragment; ESPN's box score has no xG field at
   // all, and fbref.com/Understat, the two usual free xG sources, are
   // blocked — see AmericanSoccerAnalysisProvider.ts's header for the full
-  // search). SofaScoreRapidApiProvider (previously the sole xG source,
-  // 200-requests/month quota) was disabled 2026-08-07 for realistically
-  // never surviving this app's actual pick volume. This means xG is now
-  // structurally unavailable for 23 of this app's 24 tracked leagues, not
-  // just occasionally missing — the explicit gap-reporting below matters
-  // more now than when this was written, not less: the analytical method
-  // step 1 (form vs underlying performance) needs xG specifically and
-  // should report the gap, not skip that reasoning step quietly or infer
-  // a number that isn't there.
+  // search). SofaScoreRapidApiProvider (previously the sole xG source, 200
+  // requests/~31 days) was removed 2026-08-08 for realistically never
+  // surviving this app's actual pick volume, with no fix short of a paid
+  // plan or the never-built D5 quota-budgeting proposal. This means xG is
+  // now structurally unavailable for 23 of this app's 24 tracked leagues,
+  // not just occasionally missing — the explicit gap-reporting below
+  // matters more now than when this was written, not less: the analytical
+  // method step 1 (form vs underlying performance) needs xG specifically
+  // and should report the gap, not skip that reasoning step quietly or
+  // infer a number that isn't there.
   const hasXg = /\bxG\b/.test(combined);
   return hasXg ? combined : `${combined}\n\nxG unavailable for this league/matchup — no source returned expected-goals data for either team this analysis. Do not infer over/underperformance vs underlying numbers without it; report this as a data gap instead.`;
 }
@@ -588,11 +563,11 @@ async function fetchTeamStatsSafely(provider: StatsProvider, teamName: string, s
   }
 }
 
-// Generic across any provider fronted by a rate-limited API, not just
-// SofaScore — a 429, or a response explicitly reporting zero requests
-// remaining, means the request never had a chance to succeed or fail on
-// its own merits, which is a different situation from the source itself
-// being broken (see dataSourceHealth.ts's recordAttempt "reason" param).
+// Generic across any provider fronted by a rate-limited API — a 429, or a
+// response explicitly reporting zero requests remaining, means the request
+// never had a chance to succeed or fail on its own merits, which is a
+// different situation from the source itself being broken (see
+// dataSourceHealth.ts's recordAttempt "reason" param).
 function isQuotaExhaustedError(err: unknown): boolean {
   const response = (err as { response?: { status?: number; headers?: Record<string, string> } })?.response;
   if (!response) return false;

@@ -68,13 +68,12 @@ const STATS_SOURCE_ID = "espn-match-stats";
 const MIN_DATA_SCORE = 1;
 
 const provider = getFixtureProvider();
-// Deliberately NOT getEnabledStatsProviders() — the 3 quota-constrained
-// stats sources (api-football, sportmonks, football-data) opt out of
-// ingestion-time scoring via usedForIngestionScoring:false in
-// dataSources.ts, since this loop runs per new fixture across every
-// tracked league and would exhaust e.g. API-Football's 100/day budget
-// almost immediately. Prompt-time analysis (analyzeEvent.ts) still uses
-// all of them via getEnabledStatsProviders().
+// Deliberately NOT getEnabledStatsProviders() — the quota-/plan-constrained
+// stats sources (sportmonks, football-data) opt out of ingestion-time
+// scoring via usedForIngestionScoring:false in dataSources.ts, since this
+// loop runs per new fixture across every tracked league and would exhaust
+// a tight budget almost immediately. Prompt-time analysis (analyzeEvent.ts)
+// still uses all of them via getEnabledStatsProviders().
 const statsProviders = getIngestionScoringStatsProviders();
 
 export async function runFixtureIngestionCycle(): Promise<{ ingested: number; rejectedInsufficientData: number }> {

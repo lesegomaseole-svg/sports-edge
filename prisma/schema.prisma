@@ -211,12 +211,13 @@ model DataSourceHealth {
   // Added 2026-08-04 — distinguishes WHY a source is disabled. Null means
   // the ordinary 3-consecutive-failures/empty-results reason (see
   // dataSourceHealth.ts). "quota_exhausted" means a provider's own request
-  // quota hit zero (currently only SofaScore, the app's sole xG source,
-  // 200 requests/~31 days) — a fundamentally different situation from a
-  // genuinely broken source: it needs no fixing, just time, and lumping it
-  // into the generic disabled state would make quota exhaustion
-  // indistinguishable from an actual outage on the D4 dashboard warning.
-  // Cleared back to null on the next recorded success, same as disabled.
+  // quota hit zero (e.g. football-data.org's 10 req/min, sportmonks' 3000
+  // req/hour — see isQuotaExhaustedError in analyzeEvent.ts) — a
+  // fundamentally different situation from a genuinely broken source: it
+  // needs no fixing, just time, and lumping it into the generic disabled
+  // state would make quota exhaustion indistinguishable from an actual
+  // outage on the D4 dashboard warning. Cleared back to null on the next
+  // recorded success, same as disabled.
   disabledReason     String?
   updatedAt          DateTime  @updatedAt
 }

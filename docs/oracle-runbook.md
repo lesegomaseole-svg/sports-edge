@@ -145,9 +145,9 @@ Replace every `REPLACE_ME`:
   Auth prompt.
 - `THE_ODDS_API_KEY` — the **freshly rotated** key, not the one exposed in
   this machine's local session transcripts during the 2026-08 audit.
-- The remaining provider keys (`NEWSAPI_KEY`, `API_FOOTBALL_KEY`,
-  `SPORTMONKS_API_KEY`, `FOOTBALL_DATA_API_KEY`, `OPENWEATHERMAP_API_KEY`,
-  `SOFASCORE_RAPIDAPI_KEY`) — copy from your existing `.env`.
+- The remaining provider keys (`NEWSAPI_KEY`, `SPORTMONKS_API_KEY`,
+  `FOOTBALL_DATA_API_KEY`, `OPENWEATHERMAP_API_KEY`) — copy from your
+  existing `.env`.
 
 ## 6. Log the `claude` CLI in
 

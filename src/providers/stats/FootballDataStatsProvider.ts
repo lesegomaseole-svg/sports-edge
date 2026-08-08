@@ -1,15 +1,13 @@
 /**
  * Team form + standings from https://www.football-data.org (v4). Runs
- * alongside EspnMatchStatsProvider (corners/cards) and ApiFootballStatsProvider
- * — a second, independent take on the same result-form/table-position
- * signal, from a source with materially better league coverage and fresher
- * data than API-Football's free plan.
+ * alongside EspnMatchStatsProvider (corners/cards) — a second, independent
+ * take on the result-form/table-position signal.
  *
  * Verified live 2026-07-31 (original 10 leagues) and re-checked 2026-08-01
  * (10 more added) against the real account behind FOOTBALL_DATA_API_KEY:
  *   - Quota: X-RequestCounter-Reset/x-requests-available-minute headers
  *     confirm 10 requests/minute on the free plan. No documented daily cap
- *     was observed (unlike API-Football's 100/day).
+ *     was observed.
  *   - League coverage: a live GET /v4/competitions call returned 13
  *     competitions total, unchanged between the two checks — covering 8
  *     of this app's 20 tracked leagues — PL, PD (La Liga), SA, BL1
@@ -19,14 +17,12 @@
  *     lookup miss): UEFA Europa League, MLS, Scottish Premiership, Danish
  *     Superliga, Argentina, Saudi Arabia, Turkey, Belgium, Mexico, Japan.
  *     Those sportKeys are simply skipped here (logged, not faked) — see
- *     ApiFootballStatsProvider/SportMonksStatsProvider for what covers them
- *     instead.
- *   - PRIORITY (added 2026-08-01): analyzeEvent.ts now prefers THIS
- *     provider over ApiFootballStatsProvider wherever both cover a
- *     league, since this data is genuinely current and API-Football's
- *     free plan is capped at a stale season — see supportsSport() below,
- *     which analyzeEvent.ts checks before deciding whether to call
- *     ApiFootballStatsProvider at all for a given league.
+ *     SportMonksStatsProvider for its 2 covered leagues; the rest have no
+ *     independent form/standings source beyond ESPN at all (api-football
+ *     used to cover this gap for every league here, but was removed
+ *     2026-08-07 — its free plan was permanently capped to a stale 2024/25
+ *     season, no scoping fix possible since the cap applies uniformly
+ *     across every league, not selectively).
  *   - Standings' own `form` field came back null on the general
  *     standings call (a known quirk of this endpoint), so recent form is
  *     computed here instead from each team's last 5 FINISHED matches —
@@ -38,13 +34,13 @@
  *     started) returns zero matches. Mirrors EspnMatchStatsProvider's
  *     fallback: try the current year's season, then the previous year's,
  *     first one with completed matches wins.
- *   - Head-to-head: skipped for the same reason as ApiFootballStatsProvider
- *     — StatsProvider.fetchTeamStats only receives one team, with no
- *     opponent parameter to pair a head-to-head query against.
- *   - Not wired into oddsIngestion.ts's sufficiency scoring, same
- *     reasoning as ApiFootballStatsProvider: that loop runs per new
- *     fixture across every tracked league, and this provider is meant for
- *     on-demand analyzeEvent.ts calls, not a tight automated loop.
+ *   - Head-to-head: skipped — StatsProvider.fetchTeamStats only receives
+ *     one team, with no opponent parameter to pair a head-to-head query
+ *     against.
+ *   - Not wired into oddsIngestion.ts's sufficiency scoring: that loop
+ *     runs per new fixture across every tracked league, and this provider
+ *     is meant for on-demand analyzeEvent.ts calls, not a tight automated
+ *     loop.
  */
 import axios from "axios";
 import { StatsProvider, StatsSnapshot } from "./StatsProvider";
