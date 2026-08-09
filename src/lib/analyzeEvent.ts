@@ -119,8 +119,15 @@ interface MarketMenuItem {
 // of first goal / own goal (too speculative to analyze honestly from
 // season-level stats), race-to-X corners / first card (need in-match
 // sequencing data this app doesn't have), any player-level market (needs
-// a player-stats dimension not built), and to-qualify / tournament-winner
-// (season/knockout-level, doesn't fit a single-fixture analysis).
+// a player-stats dimension not built), to-qualify / tournament-winner
+// (season/knockout-level, doesn't fit a single-fixture analysis), and
+// total_corners/total_cards (removed 2026-08-09 — both were defined as a
+// vague "directional lean... no specific number" precisely because there
+// was no real line to grade against, which made them ALWAYS_UNSETTLEABLE
+// in settlement.ts by construction: any pick on either market could never
+// be graded won/lost no matter how much data accumulated, so it was pure
+// downside — a wasted analysis with zero possible learning signal, not a
+// data-thinness problem like the rest of the low-usage menu).
 const SOCCER_MARKET_MENU: MarketMenuItem[] = [
   {
     id: "match_winner",
@@ -179,9 +186,9 @@ const SOCCER_MARKET_MENU: MarketMenuItem[] = [
     description: 'Which half has more goals — "First half" or "Second half".',
   },
   {
-    id: "total_corners",
+    id: "second_half_total_goals",
     description:
-      'A directional lean on overall match corner count — high vs low — described in words only, e.g. "Expect a high number of corners". No specific number.',
+      'Over/Under ONE standard SECOND-HALF-ONLY goals threshold: 0.5, 1.5, or 2.5 — e.g. "Under 2.5 goals in the second half". Second-half totals run on their own line, not a simple half of the full-match total_goals line — most leagues see somewhat MORE goals after halftime than before it (fatigue, substitutions, more direct play chasing a result), so don\'t just infer this from a full-match read; form a specific view on the second half\'s own dynamics.',
   },
   {
     id: "over_under_corners",
@@ -191,10 +198,6 @@ const SOCCER_MARKET_MENU: MarketMenuItem[] = [
   {
     id: "team_corners",
     description: 'Name the team you think wins the corner count, e.g. "Arsenal to have more corners".',
-  },
-  {
-    id: "total_cards",
-    description: "A directional lean on overall match cards/bookings — high vs low — described in words only. No specific number.",
   },
   {
     id: "over_under_bookings",

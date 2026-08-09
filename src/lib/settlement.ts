@@ -47,9 +47,18 @@ export type SettlementOutcome = "won" | "lost" | "push" | "unsettleable";
 // Markets that can NEVER be settled from this app's result data, by
 // definition of what the market itself asks for — not a temporary gap.
 // See each one's description in analyzeEvent.ts's SOCCER_MARKET_MENU.
+//
+// total_corners/total_cards (removed from the menu 2026-08-09, kept here):
+// unsettleable-by-construction was exactly why they were cut — being
+// permanently unsettleable is strictly worse than being low-usage, since
+// it's a guaranteed wasted analysis with zero possible learning signal,
+// not just a rarely-picked one. Left in this set (not deleted) so the one
+// historical total_cards Pick that already exists keeps resolving
+// correctly — the model can no longer generate a new one either way, since
+// it's off the menu.
 const ALWAYS_UNSETTLEABLE = new Set([
-  "total_corners", // explicitly "no specific number" in its own description — no fixed line to grade against
-  "total_cards", // same
+  "total_corners",
+  "total_cards",
   "method_of_victory", // subjective narrative ("via a dominant defensive display"), not a fact this app can check
 ]);
 
@@ -169,6 +178,13 @@ export function settlePick(
       const predicted = /first/.test(rec) ? "first" : /second/.test(rec) ? "second" : null;
       if (predicted == null) return "unsettleable";
       return predicted === actual ? "won" : "lost";
+    }
+
+    case "second_half_total_goals": {
+      if (result.htScoreHome == null || result.htScoreAway == null || result.finalScoreHome == null || result.finalScoreAway == null) return null;
+      const half1 = result.htScoreHome + result.htScoreAway;
+      const half2 = result.finalScoreHome + result.finalScoreAway - half1;
+      return settleOverUnder(rec, half2);
     }
 
     case "over_under_corners": {
