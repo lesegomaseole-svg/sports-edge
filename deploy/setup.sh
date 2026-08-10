@@ -137,11 +137,9 @@ ODDS_PROVIDER=the-odds-api
 ODDS_REGIONS=uk
 
 NEWSAPI_KEY=REPLACE_ME
-API_FOOTBALL_KEY=REPLACE_ME
 SPORTMONKS_API_KEY=REPLACE_ME
 FOOTBALL_DATA_API_KEY=REPLACE_ME
 OPENWEATHERMAP_API_KEY=REPLACE_ME
-SOFASCORE_RAPIDAPI_KEY=REPLACE_ME
 
 # Real analysis calls routinely take longer than the CLI's 180s default —
 # confirmed live during this deployment's own testing (3 of 4 real picks
@@ -224,7 +222,15 @@ UNITEOF
 systemctl daemon-reload
 systemctl enable "$SERVICE_NAME"
 
-if grep -q "REPLACE_ME" "$ENV_FILE"; then
+# "=REPLACE_ME" specifically, not bare "REPLACE_ME" (fixed 2026-08-10):
+# the file's own header comment ("Fill in every REPLACE_ME below") always
+# matched the old bare pattern, so this check found a "placeholder" on
+# every single run regardless of whether every real key was actually
+# filled in — confirmed live on a fully-configured, already-running
+# deployment. That meant the restart-and-verify branch below was
+# effectively dead code from the moment it was written; this is what
+# actually made it reachable.
+if grep -q "=REPLACE_ME" "$ENV_FILE"; then
   echo ""
   echo "=== Setup complete, but NOT starting the service yet ==="
   echo "$ENV_FILE still has REPLACE_ME placeholders. Fill in real values,"
