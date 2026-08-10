@@ -74,8 +74,8 @@ export function settlePick(
   if (!result.completed) return null;
 
   const rec = recommendation.toLowerCase();
-  const mentionsHome = mentionsTeam(rec, homeTeam);
-  const mentionsAway = mentionsTeam(rec, awayTeam);
+  const mentionsHome = mentionsTeam(rec, homeTeam, awayTeam);
+  const mentionsAway = mentionsTeam(rec, awayTeam, homeTeam);
 
   switch (marketType) {
     case "match_winner":
@@ -272,7 +272,7 @@ function settleYesNo(lowerRec: string, actualYes: boolean): SettlementOutcome {
 function resultLabelToSide(label: string, homeTeam: string, awayTeam: string): "home" | "away" | "draw" | null {
   const lower = label.toLowerCase();
   if (/\bdraw\b/.test(lower)) return "draw";
-  if (mentionsTeam(lower, homeTeam)) return "home";
-  if (mentionsTeam(lower, awayTeam)) return "away";
+  if (mentionsTeam(lower, homeTeam, awayTeam)) return "home";
+  if (mentionsTeam(lower, awayTeam, homeTeam)) return "away";
   return null;
 }
