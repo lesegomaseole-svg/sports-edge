@@ -82,6 +82,18 @@ fi
 if [ -d "$APP_DIR/.git" ]; then
   echo "Existing checkout found — pulling latest."
   sudo -u "$APP_USER" git -C "$APP_DIR" pull --ff-only
+  # Re-exec from the just-pulled copy of THIS FILE (added 2026-08-10):
+  # confirmed live that bash can keep running a stale in-memory read of a
+  # script after `git pull` rewrites it on disk mid-execution — a run
+  # correctly pulled a fix to this exact file, but then executed the OLD
+  # pre-fix logic for everything after this point anyway, because bash had
+  # already buffered that part of the file before the pull changed it.
+  # SPORTS_EDGE_REEXECED guards against looping forever: the re-exec'd
+  # process hits this same block again (pull is now a fast no-op), and
+  # without the guard would just re-exec itself indefinitely.
+  if [ -z "${SPORTS_EDGE_REEXECED:-}" ]; then
+    exec env SPORTS_EDGE_REEXECED=1 "$APP_DIR/deploy/setup.sh"
+  fi
 else
   sudo -u "$APP_USER" git clone "$REPO_URL" "$APP_DIR"
 fi
