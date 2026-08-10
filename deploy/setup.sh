@@ -198,6 +198,15 @@ cat > "/etc/systemd/system/${SERVICE_NAME}.service" << UNITEOF
 [Unit]
 Description=Sports Edge
 After=network.target
+# Belt-and-braces on top of RestartSec: 5 crashes in 60s means something's
+# structurally broken, not transient — stop instead of restart-looping
+# forever and hammering whatever's failing (an API, the DB, etc).
+# MUST live in [Unit], not [Service] (fixed 2026-08-10) — systemd silently
+# ignores StartLimitIntervalSec/StartLimitBurst under [Service] (logs
+# "Unknown key name... ignoring" and just keeps going), which meant this
+# circuit breaker was never actually active despite looking configured.
+StartLimitIntervalSec=60
+StartLimitBurst=5
 
 [Service]
 Type=simple
@@ -207,11 +216,6 @@ EnvironmentFile=${ENV_FILE}
 ExecStart=/usr/bin/node ${APP_DIR}/dist/index.js
 Restart=on-failure
 RestartSec=5
-# Belt-and-braces on top of RestartSec: 5 crashes in 60s means something's
-# structurally broken, not transient — stop instead of restart-looping
-# forever and hammering whatever's failing (an API, the DB, etc).
-StartLimitIntervalSec=60
-StartLimitBurst=5
 
 [Install]
 WantedBy=multi-user.target
@@ -228,7 +232,30 @@ if grep -q "REPLACE_ME" "$ENV_FILE"; then
   echo "  systemctl start ${SERVICE_NAME}"
 else
   systemctl restart "$SERVICE_NAME"
+  # Verify the restart actually took (added 2026-08-10, after a real 23h
+  # outage this masked): `systemctl restart` returning 0 only means the
+  # request was accepted, not that the new process is actually up —
+  # Restart=on-failure deliberately does NOT re-launch a service that
+  # stopped cleanly (SIGTERM, exit 0), which is the right call for
+  # respecting an intentional `systemctl stop`, but means a redeploy whose
+  # restart silently failed to bring the new process up (interrupted SSH
+  # session, whatever) just sits there quietly, "successfully stopped,"
+  # until someone happens to notice — in this case, a full day of missed
+  # ingestion/analysis/settlement before anyone looked. Sleep briefly, then
+  # actually check, and fail LOUDLY (non-zero exit, real error, recent
+  # logs) rather than printing a success message that isn't verified.
+  sleep 3
+  if ! systemctl is-active --quiet "$SERVICE_NAME"; then
+    echo ""
+    echo "=== ERROR: restart did not bring ${SERVICE_NAME} up ==="
+    echo "systemctl status ${SERVICE_NAME}:"
+    systemctl status "$SERVICE_NAME" --no-pager -l || true
+    echo ""
+    echo "Recent logs:"
+    journalctl -u "$SERVICE_NAME" --no-pager -n 30 || true
+    exit 1
+  fi
   echo ""
-  echo "=== Setup complete, service (re)started ==="
+  echo "=== Setup complete, service (re)started and confirmed active ==="
   echo "systemctl status ${SERVICE_NAME}"
 fi
