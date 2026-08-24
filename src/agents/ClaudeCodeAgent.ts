@@ -125,6 +125,34 @@ export class ClaudeCodeAgent implements AgentProvider {
   readonly supportsSearch = true;
 
   async analyze(prompt: string): Promise<AgentRecommendation> {
+    const { resultText, latencyMs } = await this.runPrompt(prompt);
+    const recommendation = parseAgentJson(resultText);
+    // searchesPerformed is the model's own self-reported account — used
+    // here as the searchesUsed proxy since the CLI's --output-format json
+    // envelope exposes no authoritative per-call search count (verified
+    // against the documented envelope shape: result/session_id/is_error/
+    // subtype and a cost breakdown, nothing search-count-specific).
+    const searchesUsed = recommendation.searchesPerformed.length;
+
+    console.log(
+      `[ClaudeCodeAgent] call completed in ${latencyMs}ms, ${searchesUsed} search(es) self-reported: ${recommendation.searchesPerformed.map((q) => `"${q}"`).join(", ") || "none"}`
+    );
+
+    return { ...recommendation, searchesUsed };
+  }
+
+  /**
+   * Raw CLI invocation, split out from analyze() (added 2026-08-24) so a
+   * second, differently-shaped prompt (the daily-slip funnel's Stage 3 —
+   * see src/lib/slipAnalysis.ts) can reuse this hard-won subprocess-
+   * handling logic (usage-limit cooldown, stdin-close fix, sanitized env,
+   * error translation — each one a real bug found and fixed live earlier
+   * in this project) WITHOUT being forced through parseAgentJson's
+   * AgentRecommendation-shaped parsing, which doesn't fit Stage 3's
+   * different output contract. Pure extraction, no behavior change —
+   * analyze() above calls this and then parses exactly as it always did.
+   */
+  async runPrompt(prompt: string): Promise<{ resultText: string; latencyMs: number }> {
     if (usageLimitedUntil && Date.now() < usageLimitedUntil) {
       const minsLeft = Math.ceil((usageLimitedUntil - Date.now()) / 60_000);
       throw new Error(
@@ -194,19 +222,7 @@ export class ClaudeCodeAgent implements AgentProvider {
       throw new Error(`Claude Code not authenticated: "${resultText.trim()}" — run "claude" and complete /login.`);
     }
 
-    const recommendation = parseAgentJson(resultText);
-    // searchesPerformed is the model's own self-reported account — used
-    // here as the searchesUsed proxy since the CLI's --output-format json
-    // envelope exposes no authoritative per-call search count (verified
-    // against the documented envelope shape: result/session_id/is_error/
-    // subtype and a cost breakdown, nothing search-count-specific).
-    const searchesUsed = recommendation.searchesPerformed.length;
-
-    console.log(
-      `[ClaudeCodeAgent] call completed in ${latencyMs}ms, ${searchesUsed} search(es) self-reported: ${recommendation.searchesPerformed.map((q) => `"${q}"`).join(", ") || "none"}`
-    );
-
-    return { ...recommendation, searchesUsed };
+    return { resultText, latencyMs };
   }
 }
 
