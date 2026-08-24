@@ -100,6 +100,7 @@ import { mentionsTeam } from "./teamNameMatch";
 import { captureOddsAtPick } from "./clv";
 import { shouldRunCritique, runCritiquePass } from "./critiquePass";
 import { computeCalibrationReport } from "./calibration";
+import { runAndSaveEdgeCheck } from "./pickEdgeCheck";
 
 const statsProviders = getEnabledStatsProviders();
 const weatherProvider = getEnabledWeatherProvider();
@@ -366,6 +367,18 @@ export async function analyzeEvent(eventId: number) {
     update: { ...pickData, createdAt: new Date() },
     create: { eventId, ...pickData },
   });
+
+  // Edge check (added 2026-08-24) — deliberately fire-and-forget, not
+  // awaited: it's a second real LLM call (searching for current odds and
+  // confirming/adjusting the confidence just saved above), and awaiting
+  // it here would double how long POST /api/picks/generate takes to
+  // respond, directly re-introducing the "keep refreshing the page"
+  // latency problem this app already fixed once. Same asynchronous-
+  // enrichment shape as CLV's closing-odds capture (clvScheduler.ts) —
+  // the pick is immediately usable with its original fields; the edge
+  // check's fields populate a little later. See pickEdgeCheck.ts's own
+  // header for why this exists and what it does/doesn't change.
+  void runAndSaveEdgeCheck(pick.id);
 
   return pick;
 }

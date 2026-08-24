@@ -378,6 +378,25 @@ model Pick {
   // a capture that didn't happen. Live and backfill values must never be
   // aggregated together in reporting without this distinction visible.
   clvCaptureSource String?
+
+  // Edge check (added 2026-08-24) — see src/lib/pickEdgeCheck.ts's own
+  // header for the full rationale: this app's manual-Analyse flow never
+  // compared its confidence against real market pricing until now. Runs
+  // as a SEPARATE follow-up step after this Pick is already saved
+  // exactly as it always was — does not change marketType/recommendation/
+  // confidence/reasoning above, which remain the model's original,
+  // unmodified output. All nullable/optional: edgeCheckApplicable is
+  // false (not null) for market types with no clean enumerable outcome
+  // set to de-vig against (see getOutcomeLabels) — genuinely null only
+  // means the check hasn't run yet.
+  edgeCheckApplicable        Boolean?
+  edgeCheckDevigedProbability Float?
+  edgeCheckPrice             Float?
+  edgeCheckEdge              Float? // confidence - edgeCheckDevigedProbability
+  edgeCheckVetoed            Boolean?
+  edgeCheckVetoReason        String?
+  edgeCheckNote              String?
+  edgeCheckAt                DateTime?
 }
 
 // Daily-slip funnel output (added 2026-08-24) — deliberately a SEPARATE
