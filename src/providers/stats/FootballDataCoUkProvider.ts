@@ -44,10 +44,24 @@
  */
 import axios from "axios";
 import { StatsProvider, StatsSnapshot } from "./StatsProvider";
+import { TeamGoalProfile, LeagueAverages } from "../../lib/poissonModel";
 
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24h — the file only changes as matches complete, no need to re-fetch more often
 const RECENT_MATCH_COUNT = 5;
 const BASE_URL = "https://www.football-data.co.uk";
+
+// See getLeagueTeamRates below for why this exists.
+const MIN_MATCHES_FOR_RATE = 5;
+
+export interface TeamGoalProfileWithMeta extends TeamGoalProfile {
+  matchCount: number;
+}
+
+export interface LeagueTeamRates {
+  league: LeagueAverages;
+  home: Map<string, TeamGoalProfileWithMeta>; // keyed by the team name as it appears in this source's own CSV
+  away: Map<string, TeamGoalProfileWithMeta>;
+}
 
 interface LeagueRef {
   code: string;
@@ -90,7 +104,7 @@ function seasonCode(offsetYears: number): string {
   return `${String(currentStartYear).slice(-2)}${String(endYear).slice(-2)}`;
 }
 
-interface ParsedMatch {
+export interface ParsedMatch {
   date: string;
   home: string;
   away: string;
@@ -190,7 +204,7 @@ function parseCsv(text: string, rich: boolean): ParsedMatch[] {
 // simpler than espnLeagueMap.ts's normalizeForMatch (no suffix-stripping
 // aliases) — kept as a smaller, separate function since this source's
 // naming quirks aren't the same ones that function was built for.
-function normalize(name: string): string {
+export function normalize(name: string): string {
   return name
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
@@ -204,11 +218,71 @@ function normalize(name: string): string {
 // failed to match this source's plain "Belgrano". Confirmed live this
 // pattern recurs across several Argentine clubs (Talleres, Central
 // C\u00f3rdoba, Gimnasia, Instituto all use the same ESPN "Club (City)" shape).
-function normalizeVariants(name: string): string[] {
+export function normalizeVariants(name: string): string[] {
   const variants = [normalize(name)];
   const withoutParen = name.replace(/\s*\([^)]*\)\s*$/, "").trim();
   if (withoutParen !== name) variants.push(normalize(withoutParen));
   return variants;
+}
+
+/**
+ * Pure aggregation, deliberately separate from getLeagueTeamRates' network
+ * fetch (added 2026-08-24) — this is the part that can actually have a
+ * logic bug, so it needs to be testable with a synthetic, hand-computable
+ * dataset independent of whether the live CSV fetch is reachable on any
+ * given network. Same "pure computation, separate from I/O" split already
+ * used for src/lib/poissonModel.ts and src/lib/devig.ts.
+ */
+export function aggregateTeamRates(matches: ParsedMatch[]): LeagueTeamRates | null {
+  if (matches.length === 0) return null;
+
+  let totalHomeGoals = 0;
+  let totalAwayGoals = 0;
+  const homeAgg = new Map<string, { goalsFor: number; goalsAgainst: number; count: number }>();
+  const awayAgg = new Map<string, { goalsFor: number; goalsAgainst: number; count: number }>();
+
+  for (const m of matches) {
+    totalHomeGoals += m.homeGoals;
+    totalAwayGoals += m.awayGoals;
+
+    const h = homeAgg.get(m.home) ?? { goalsFor: 0, goalsAgainst: 0, count: 0 };
+    h.goalsFor += m.homeGoals;
+    h.goalsAgainst += m.awayGoals;
+    h.count += 1;
+    homeAgg.set(m.home, h);
+
+    const a = awayAgg.get(m.away) ?? { goalsFor: 0, goalsAgainst: 0, count: 0 };
+    a.goalsFor += m.awayGoals;
+    a.goalsAgainst += m.homeGoals;
+    a.count += 1;
+    awayAgg.set(m.away, a);
+  }
+
+  const avgHomeGoals = totalHomeGoals / matches.length;
+  const avgAwayGoals = totalAwayGoals / matches.length;
+  const league: LeagueAverages = { avgHomeGoals, avgAwayGoals };
+
+  const home = new Map<string, TeamGoalProfileWithMeta>();
+  for (const [team, agg] of homeAgg) {
+    if (agg.count < MIN_MATCHES_FOR_RATE) continue;
+    home.set(team, {
+      attackStrength: agg.goalsFor / agg.count / avgHomeGoals,
+      defenseWeakness: agg.goalsAgainst / agg.count / avgAwayGoals,
+      matchCount: agg.count,
+    });
+  }
+
+  const away = new Map<string, TeamGoalProfileWithMeta>();
+  for (const [team, agg] of awayAgg) {
+    if (agg.count < MIN_MATCHES_FOR_RATE) continue;
+    away.set(team, {
+      attackStrength: agg.goalsFor / agg.count / avgAwayGoals,
+      defenseWeakness: agg.goalsAgainst / agg.count / avgHomeGoals,
+      matchCount: agg.count,
+    });
+  }
+
+  return { league, home, away };
 }
 
 export class FootballDataCoUkProvider implements StatsProvider {
@@ -274,6 +348,45 @@ export class FootballDataCoUkProvider implements StatsProvider {
       summary: `${teamName}: ${parts.join(", ")}.`,
       raw: { matchCount: teamMatches.length, rich: ref.rich },
     };
+  }
+
+  /**
+   * League-wide team goal-scoring/conceding rates, added 2026-08-24 for
+   * the Poisson baseline model (src/lib/poissonModel.ts) — separate from
+   * fetchTeamStats above, which only ever looks at ONE team's recent
+   * form. This aggregates the WHOLE league's match list at once (already
+   * fetched via the same getLeagueMatches/cache this class already has)
+   * into home/away attack-strength and defense-weakness ratios relative
+   * to the league average, per Maher's classic model.
+   *
+   * MIN_MATCHES_FOR_RATE (5): a team with only 1-2 matches in a venue
+   * context produces a wildly noisy ratio driven by one scoreline — seen
+   * directly earlier this session with Zulte-Waregem/Genk having ZERO
+   * current-season matches at all in early August. Below the threshold,
+   * that team's profile is omitted rather than returned as if reliable.
+   *
+   * Returns null only if the league itself has no matches at all (should
+   * be rare — getLeagueMatches already falls back to the previous season
+   * if the current one hasn't started). Individual teams below the match
+   * threshold are simply absent from the two Maps, not an all-or-nothing
+   * failure for the whole league.
+   */
+  async getLeagueTeamRates(sportKey: string): Promise<LeagueTeamRates | null> {
+    const ref = LEAGUE_MAP[sportKey];
+    if (!ref) return null;
+
+    const matches = await this.getLeagueMatches(ref);
+    if (!matches) return null;
+    return aggregateTeamRates(matches);
+  }
+
+  /** Same fuzzy name matching as fetchTeamStats (ESPN "Club (City)" vs this source's plain names) — public so callers building on getLeagueTeamRates don't have to reimplement it. */
+  findTeamRate(rates: Map<string, TeamGoalProfileWithMeta>, teamName: string): TeamGoalProfileWithMeta | null {
+    const targetVariants = normalizeVariants(teamName);
+    for (const [rawName, profile] of rates) {
+      if (targetVariants.includes(normalize(rawName))) return profile;
+    }
+    return null;
   }
 
   private async getLeagueMatches(ref: LeagueRef): Promise<ParsedMatch[] | null> {
