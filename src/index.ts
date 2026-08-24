@@ -7,6 +7,7 @@ import { startClvScheduler } from "./scheduler/clvScheduler";
 import { getOddsProvider } from "./providers/odds";
 import { DATA_SOURCES } from "./config/dataSources";
 import { prisma } from "./db/client";
+import { runDbBackupIfDue } from "./lib/dbBackup";
 
 const PORT = Number(process.env.PORT || 3000);
 
@@ -27,6 +28,7 @@ app.listen(PORT, () => {
   startClvScheduler();
   void warnIfSourcesDisabled();
   warnIfAuthUnset();
+  void runDbBackupIfDue().catch((err) => console.error("[dbBackup] unexpected failure:", (err as Error).message));
 });
 
 // See src/api/authMiddleware.ts — enforcement is entirely gated on this
