@@ -291,11 +291,13 @@
 </header>
 <nav>
   <button data-panel="fixtures" class="active"><i class="ti ti-list-details"></i>Fixtures</button>
+  <button data-panel="daily-slip"><i class="ti ti-receipt"></i>Daily Slip</button>
   <button data-panel="markets"><i class="ti ti-adjustments"></i>Market Manager</button>
   <button data-panel="track-record"><i class="ti ti-chart-line"></i>Track Record</button>
 </nav>
 <main>
   <section id="panel-fixtures" class="panel active"></section>
+  <section id="panel-daily-slip" class="panel"></section>
   <section id="panel-markets" class="panel"></section>
   <section id="panel-track-record" class="panel"></section>
 </main>
@@ -311,6 +313,7 @@ document.querySelectorAll("nav button").forEach(btn => {
     document.getElementById("panel-" + btn.dataset.panel).classList.add("active");
     if (btn.dataset.panel === "markets") loadMarkets();
     if (btn.dataset.panel === "track-record") loadTrackRecord();
+    if (btn.dataset.panel === "daily-slip") loadDailySlip();
   });
 });
 
@@ -789,6 +792,127 @@ async function loadMarkets() {
 // ---------- Track Record ----------
 function pct(x) { return x == null ? "—" : (x * 100).toFixed(1) + "%"; }
 function signedPct(x) { return x == null ? "—" : (x >= 0 ? "+" : "") + (x * 100).toFixed(1) + "pp"; }
+
+// Daily slip (added 2026-08-24) — see src/lib/dailySlip.ts. POST /run can
+// genuinely take several minutes (up to SHORTLIST_SIZE real Stage 3 LLM
+// calls) — the elapsed-time ticker here mirrors the existing Analyse
+// button's pattern for the exact same reason (this app already fixed a
+// "keep refreshing, looks stuck" bug once, not repeating it here).
+let dailySlipTicker = null;
+
+async function loadDailySlip() {
+  const el = document.getElementById("panel-daily-slip");
+  el.innerHTML = `
+    <div class="fixture-top">
+      <h2 class="section-title" style="margin:0">Daily Slip</h2>
+      <button class="btn primary" id="run-daily-slip-btn"><i class="ti ti-player-play"></i>Run Today's Slip</button>
+    </div>
+    <div id="daily-slip-body"><p class="empty">Loading…</p></div>
+  `;
+  document.getElementById("run-daily-slip-btn").addEventListener("click", runDailySlipNow);
+  await refreshDailySlipBody();
+}
+
+async function refreshDailySlipBody(freshComboResult) {
+  const body = document.getElementById("daily-slip-body");
+  const data = await fetch(API + "/daily-slip/latest").then(res => res.json());
+
+  if (!data.runDate) {
+    body.innerHTML = '<p class="empty">No daily slip has been run yet — click "Run Today\'s Slip" above.</p>';
+    return;
+  }
+
+  const comboHtml = freshComboResult ? renderComboSummary(freshComboResult) : `
+    <p class="sub">Showing legs from the last run (${data.runDate}). Combined-odds math is only shown right after a fresh run — click "Run Today's Slip" to see it again.</p>
+  `;
+
+  const legRows = data.legs.map(l => {
+    const statusBadge = l.includedInCombo
+      ? '<span class="outcome-badge outcome-won"><i class="ti ti-check"></i>in combo</span>'
+      : l.veto
+        ? '<span class="outcome-badge outcome-lost"><i class="ti ti-ban"></i>vetoed</span>'
+        : l.passedEvGate
+          ? '<span class="outcome-badge"><i class="ti ti-circle-check"></i>passed gate</span>'
+          : '<span class="outcome-badge"><i class="ti ti-x"></i>no edge</span>';
+    return `
+      <tr>
+        <td>
+          <div style="font-weight:600">${l.homeTeam} vs ${l.awayTeam}</div>
+          <div class="sub">${l.sport} · ${new Date(l.commenceTime).toLocaleString()}</div>
+        </td>
+        <td>${l.recommendation}<div class="sub">${l.marketType}</div></td>
+        <td class="num">${pct(l.baselineProbability)}</td>
+        <td class="num">${pct(l.adjustedProbability)}</td>
+        <td class="num">${l.devigedMarketProbability == null ? "—" : pct(l.devigedMarketProbability)}</td>
+        <td class="num">${l.price == null ? "—" : l.price.toFixed(2)}</td>
+        <td class="num">${l.edge == null ? "—" : signedPct(l.edge)}</td>
+        <td>${statusBadge}</td>
+      </tr>
+      <tr><td colspan="8" class="sub" style="padding-top:0;padding-bottom:14px">${l.veto ? ("<strong>Veto reason:</strong> " + l.vetoReason) : l.reasoning}</td></tr>
+    `;
+  }).join("");
+
+  body.innerHTML = `
+    ${comboHtml}
+    <table class="track-table">
+      <thead><tr><th>Fixture</th><th>Market</th><th>Baseline</th><th>Adjusted</th><th>De-vigged Mkt.</th><th>Price</th><th>Edge</th><th>Status</th></tr></thead>
+      <tbody>${legRows || '<tr><td colspan="8" class="empty">No legs evaluated in this run.</td></tr>'}</tbody>
+    </table>
+  `;
+}
+
+function renderComboSummary(comboResult) {
+  if (comboResult.type === "NO_QUALIFYING_SLIP") {
+    return `<div class="sample-warning"><i class="ti ti-info-circle"></i><strong>No qualifying slip today.</strong> ${comboResult.reason}</div>`;
+  }
+  const s = comboResult.slip;
+  return `
+    <div class="metrics" style="margin-bottom:16px">
+      <div class="metric-card accent-blue">
+        <div class="label">Combined Odds</div>
+        <div class="value">${s.combinedOdds.toFixed(2)}</div>
+      </div>
+      <div class="metric-card">
+        <div class="label">Legs</div>
+        <div class="value" style="font-size:22px">${s.legs.length}</div>
+      </div>
+      <div class="metric-card">
+        <div class="label">Correlation-Adjusted Probability</div>
+        <div class="value">${pct(s.correlationAdjustedProbability)}</div>
+      </div>
+      <div class="metric-card accent-success">
+        <div class="label">Estimated Edge</div>
+        <div class="value">${signedPct(s.estimatedEdge)}</div>
+      </div>
+    </div>
+    <p class="sub">Naive joint probability (no correlation haircut): ${pct(s.naiveJointProbability)} · Implied by the odds themselves: ${pct(s.impliedProbabilityFromOdds)}</p>
+  `;
+}
+
+async function runDailySlipNow() {
+  const btn = document.getElementById("run-daily-slip-btn");
+  btn.disabled = true;
+  const startedAt = Date.now();
+  const setLabel = () => {
+    const secs = Math.floor((Date.now() - startedAt) / 1000);
+    btn.innerHTML = `<i class="ti ti-loader-2"></i>Running… (${secs}s — this can take several minutes)`;
+  };
+  setLabel();
+  dailySlipTicker = setInterval(setLabel, 1000);
+
+  try {
+    const res = await fetch(API + "/daily-slip/run", { method: "POST" });
+    if (!res.ok) throw new Error("Request failed (" + res.status + ")");
+    const result = await res.json();
+    await refreshDailySlipBody(result.comboResult);
+  } catch (err) {
+    document.getElementById("daily-slip-body").innerHTML = `<p class="empty">Run failed: ${err.message}. The fixtures list may still be usable — try again.</p>`;
+  } finally {
+    clearInterval(dailySlipTicker);
+    btn.disabled = false;
+    btn.innerHTML = '<i class="ti ti-player-play"></i>Run Today\'s Slip';
+  }
+}
 
 async function loadTrackRecord() {
   const el = document.getElementById("panel-track-record");
