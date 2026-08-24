@@ -9,6 +9,7 @@ import { picksRouter } from "./routes/picks";
 import { fixturesRouter } from "./routes/fixtures";
 import { dataSourceHealthRouter } from "./routes/dataSourceHealth";
 import { analysisRouter } from "./routes/analysis";
+import { dailySlipRouter } from "./routes/dailySlip";
 import { authGate } from "./authMiddleware";
 
 export function createApp() {
@@ -33,6 +34,7 @@ export function createApp() {
   app.use("/api/fixtures", fixturesRouter);
   app.use("/api/data-sources", dataSourceHealthRouter);
   app.use("/api/analysis", analysisRouter);
+  app.use("/api/daily-slip", dailySlipRouter);
 
   // Static market-management dashboard.
   app.use(express.static(path.join(__dirname, "..", "..", "public")));
