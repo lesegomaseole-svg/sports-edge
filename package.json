@@ -5,14 +5,14 @@
   "main": "dist/index.js",
   "type": "commonjs",
   "scripts": {
-    "dev": "tsx watch src/index.ts",
+    "dev": "NODE_OPTIONS=--use-system-ca tsx watch src/index.ts",
     "build": "tsc -p tsconfig.json",
-    "start": "node dist/index.js",
+    "start": "NODE_OPTIONS=--use-system-ca node dist/index.js",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev --name init",
     "prisma:studio": "prisma studio",
     "seed": "tsx src/db/seed.ts",
-    "backfill:results": "tsx src/db/backfillResults.ts"
+    "backfill:results": "NODE_OPTIONS=--use-system-ca tsx src/db/backfillResults.ts"
   },
   "dependencies": {
     "@prisma/client": "^5.22.0",
