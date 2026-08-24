@@ -471,7 +471,7 @@ const NEWS_BLOCK_CAP = 8; // raised from 5 (2026-08-01) — now that filtering m
 // above general league items, which only fill remaining slots. Each item
 // is labeled in the prompt so the model can weight a team-specific report
 // above a generic league story about neither side.
-async function buildNewsBlock(sportKey: string, homeTeam: string, awayTeam: string): Promise<string> {
+export async function buildNewsBlock(sportKey: string, homeTeam: string, awayTeam: string): Promise<string> {
   const pool = await prisma.newsItem.findMany({
     where: { sportKey },
     orderBy: { publishedAt: "desc" },
@@ -495,7 +495,7 @@ async function buildNewsBlock(sportKey: string, homeTeam: string, awayTeam: stri
     .join("\n");
 }
 
-async function buildStatsBlock(homeTeam: string, awayTeam: string, sportKey: string): Promise<string> {
+export async function buildStatsBlock(homeTeam: string, awayTeam: string, sportKey: string): Promise<string> {
   const sections = await Promise.all(
     statsProviders.map(async (provider) => {
       // A provider with a STATIC per-sportKey coverage map (e.g.
@@ -582,7 +582,7 @@ function isQuotaExhaustedError(err: unknown): boolean {
 // Weather is prompt-time only, keyed off the HOME team's venue (see
 // resolveHomeVenueCity) — no venue field exists on Event, so this derives
 // one from ESPN schedule data rather than skipping weather entirely.
-async function buildWeatherBlock(homeTeam: string, sportKey: string, commenceTime: Date): Promise<string | null> {
+export async function buildWeatherBlock(homeTeam: string, sportKey: string, commenceTime: Date): Promise<string | null> {
   if (!weatherProvider) return null;
 
   const ref = ESPN_LEAGUE_BY_SPORT_KEY[sportKey];
