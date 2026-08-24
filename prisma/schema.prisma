@@ -113,6 +113,7 @@ model Event {
   oddsSnapshots OddsSnapshot[]
   picks         Pick[]
   matchResult   MatchResult?
+  dailySlipLegs DailySlipLeg[]
 
   @@index([sportId, commenceTime])
   @@index([dataScore])
@@ -377,4 +378,71 @@ model Pick {
   // a capture that didn't happen. Live and backfill values must never be
   // aggregated together in reporting without this distinction visible.
   clvCaptureSource String?
+}
+
+// Daily-slip funnel output (added 2026-08-24) — deliberately a SEPARATE
+// model from Pick, not a reuse of it. Pick is tightly coupled to the
+// existing manual-Analyse flow (free market choice from a 23-item menu,
+// critique-pass fields, a UNIQUE eventId constraint that assumes exactly
+// one advisory pick per fixture) — none of that fits this funnel's shape
+// (multiple candidate legs evaluated per run, most discarded before ever
+// becoming part of a slip, a market chosen upstream by Stage 1/2 rather
+// than freely by the model). Keeping this fully separate means the new
+// funnel can never collide with or corrupt the existing, already-proven
+// Pick data, matching the "additive, never modify what already works"
+// principle every other piece of this funnel was built under.
+//
+// One row per CANDIDATE LEG that reached Stage 3 (not just the ones that
+// made the final slip) — a leg that got vetoed or failed the EV gate is
+// still worth keeping a record of, both for debugging why a given day
+// produced NO_QUALIFYING_SLIP and for eventually auditing whether the EV
+// gate itself is well-calibrated (are gated-out legs actually worse than
+// gated-in ones, once real results exist to check against?).
+model DailySlipLeg {
+  id      Int    @id @default(autoincrement())
+  runDate String // YYYY-MM-DD (UTC) — which daily funnel run produced this row; NOT the fixture's kickoff date, since a leg can be evaluated well ahead of kickoff
+
+  eventId Int
+  event   Event @relation(fields: [eventId], references: [id])
+
+  marketType     String
+  recommendation String
+
+  baselineProbability      Float // Stage 1/2's Poisson estimate, before Stage 3 touched it
+  adjustedProbability      Float // Stage 3's LLM-adjusted estimate
+  devigedMarketProbability Float? // null if odds_found was missing/malformed — see slipAnalysis.ts
+  price                    Float? // decimal odds for the recommended outcome specifically, null under the same condition as devigedMarketProbability
+  edge                     Float? // adjustedProbability - devigedMarketProbability, null under the same condition
+
+  veto       Boolean
+  vetoReason String?
+  passedEvGate Boolean // false whenever veto is true OR edge didn't clear EDGE_THRESHOLD OR odds were missing (see evGate.ts — a missing price can never pass)
+
+  reasoning String
+  dataGaps  String @default("[]") // JSON string[], same storage convention as Pick.dataGaps
+
+  // Which slip (if any) this leg ended up part of — null for every leg
+  // that passed the gate but wasn't selected into the constructed combo,
+  // and for every leg on a day that used singles mode instead. See
+  // comboBuilder.ts: a leg passing the EV gate does not guarantee
+  // inclusion, since combo construction also enforces the one-leg-per-
+  // competition independence rule.
+  includedInCombo Boolean @default(false)
+
+  // Settlement — same convention as Pick.outcome/settledAt, populated by
+  // the same settlement.ts logic once results exist for eventId.
+  outcome   String?
+  settledAt DateTime?
+
+  // CLV — same convention as Pick's oddsAtPick/closingOdds/clvDelta, just
+  // renamed to match this model's own `price` field naming. `price` above
+  // IS oddsAtPick already (captured at Stage 3 analysis time), so only
+  // the closing side needs its own fields here.
+  closingOdds Float?
+  clvDelta    Float?
+
+  createdAt DateTime @default(now())
+
+  @@index([runDate])
+  @@index([eventId])
 }
