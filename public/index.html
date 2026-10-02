@@ -817,14 +817,25 @@ async function refreshDailySlipBody(freshComboResult) {
   const body = document.getElementById("daily-slip-body");
   const data = await fetch(API + "/daily-slip/latest").then(res => res.json());
 
-  if (!data.runDate) {
+  // BUG FIXED 2026-08-24: this used to check data.runDate FIRST and bail
+  // out to "no slip has been run yet" before ever looking at
+  // freshComboResult — meaning a just-completed run whose shortlist found
+  // NOTHING (0 candidates cleared the completeness floor, so nothing ever
+  // reached Stage 3 to persist a DailySlipLeg row) had its real,
+  // freshly-computed NO_QUALIFYING_SLIP result silently discarded every
+  // single time, which is the common case on this network right now.
+  // freshComboResult being passed at all means a run just genuinely
+  // happened, regardless of whether anything got persisted to the DB.
+  if (!data.runDate && !freshComboResult) {
     body.innerHTML = '<p class="empty">No daily slip has been run yet — click "Run Today\'s Slip" above.</p>';
     return;
   }
 
-  const comboHtml = freshComboResult ? renderComboSummary(freshComboResult) : `
-    <p class="sub">Showing legs from the last run (${data.runDate}). Combined-odds math is only shown right after a fresh run — click "Run Today's Slip" to see it again.</p>
-  `;
+  const comboHtml = freshComboResult
+    ? renderComboSummary(freshComboResult)
+    : data.runDate
+      ? `<p class="sub">Showing legs from the last run (${data.runDate}). Combined-odds math is only shown right after a fresh run — click "Run Today's Slip" to see it again.</p>`
+      : "";
 
   const legRows = data.legs.map(l => {
     const statusBadge = l.includedInCombo
